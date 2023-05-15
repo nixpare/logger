@@ -24,8 +24,8 @@ const (
 	LOG_LEVEL_FATAL
 )
 
-func (l LogLevel) String() string {
-	switch l {
+func (level LogLevel) String() string {
+	switch level {
 	case LOG_LEVEL_BLANK:
 		return ""
 	case LOG_LEVEL_INFO:
@@ -43,6 +43,36 @@ func (l LogLevel) String() string {
 	}
 }
 
+func (level LogLevel) MarshalJSON() ([]byte, error) {
+	return json.Marshal(strings.TrimSpace(strings.ToLower(level.String())))
+}
+
+func (level *LogLevel) UnmarshalJSON(b []byte) error {
+	var s string
+	if err := json.Unmarshal(b, &s); err != nil {
+		return err
+	}
+
+	switch s {
+	case "":
+		*level = LOG_LEVEL_BLANK
+	case "info":
+		*level = LOG_LEVEL_INFO
+	case "debug":
+		*level = LOG_LEVEL_DEBUG
+	case "warning":
+		*level = LOG_LEVEL_WARNING
+	case "error":
+		*level = LOG_LEVEL_ERROR
+	case "fatal":
+		*level = LOG_LEVEL_FATAL
+	default:
+		*level = -1
+	}
+
+	return nil
+}
+
 // Log is the structure that can be will store any log reported
 // with Logger. It keeps the error severity level (see the constants)
 // the date it was created and the message associated with it (probably
@@ -56,9 +86,10 @@ type Log struct {
 	MessageRaw string    `json:"-"`
 	Extra      string    `json:"extra"`  // Extra should hold any extra information provided for deeper understanding of the event
 	ExtraRaw   string    `json:"-"`
+	Tags       []string  `json:"tags,omitempty"`
 }
 
-func NewLog(level LogLevel, message string, extra string) Log {
+func NewLog(level LogLevel, message string, extra string, tags ...string) Log {
 	t := time.Now()
 
 	return Log{
@@ -70,29 +101,26 @@ func NewLog(level LogLevel, message string, extra string) Log {
 		Level: level, Date: t,
 		Message: strings.TrimSpace(RemoveTerminalColors(message)), MessageRaw: message,
 		Extra: strings.TrimSpace(RemoveTerminalColors(extra)), ExtraRaw: extra,
+		Tags: tags,
 	}
 }
 
 // JSON returns the Log l in a json-encoded string in form of a
 // slice of bytes
 func (l Log) JSON() []byte {
-	jsonL := struct {
-		ID      string    `json:"id"`
-		Level   string    `json:"level"`
-		Date    time.Time `json:"date"`
-		Message string    `json:"message"`
-		Extra   string    `json:"extra"`
-	}{
-		l.ID,
-		strings.TrimSpace(l.Level.String()), l.Date,
-		l.Message, l.Extra,
-	}
-
-	b, _ := json.Marshal(jsonL)
+	b, _ := json.Marshal(l)
 	return b
 }
 
 func (l Log) String() string {
+	if l.Level == LOG_LEVEL_BLANK {
+		return fmt.Sprintf(
+			"[%v] - %s",
+			l.Date.Format(TimeFormat),
+			l.Message,
+		)
+	}
+
 	return fmt.Sprintf(
 		"[%v] - %v: %s",
 		l.Date.Format(TimeFormat),
@@ -115,6 +143,14 @@ func (l Log) Colored() string {
 		color = BRIGHT_RED_COLOR
 	}
 
+	if l.Level == LOG_LEVEL_BLANK {
+		return fmt.Sprintf(
+			"%s[%v]%s - %s",
+			BRIGHT_BLACK_COLOR, l.Date.Format(TimeFormat), DEFAULT_COLOR,
+			l.MessageRaw,
+		)
+	}
+
 	return fmt.Sprintf(
 		"%s[%v]%s - %s%v%s: %s",
 		BRIGHT_BLACK_COLOR, l.Date.Format(TimeFormat), DEFAULT_COLOR,
@@ -128,6 +164,14 @@ func (l Log) Colored() string {
 func (l Log) Full() string {
 	if l.Extra == "" {
 		return l.String()
+	}
+
+	if l.Level == LOG_LEVEL_BLANK {
+		return fmt.Sprintf(
+			"[%v] - %s -> %s",
+			l.Date.Format(TimeFormat),
+			l.Message, l.Extra,
+		)
 	}
 
 	return fmt.Sprintf(
