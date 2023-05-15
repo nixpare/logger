@@ -43,21 +43,32 @@ func (l *Logger) addLog(log Log) {
 	}
 
 	l.logs = append(l.logs, log)
-	if l.out != nil {
-		if ToTerminal(l.out) {
-			if log.Extra != "" {
-				fmt.Fprintf(l.out, "%v\n%s\n", log.Colored(), IndentString(log.Extra, 4))
-			} else {
-				fmt.Fprintln(l.out, log.Colored())
-			}
+	if l.out == nil {
+		return
+	}
+
+	if ToTerminal(l.out) {
+		if log.Extra != "" {
+			fmt.Fprintf(l.out, "%v\n%s\n", log.Colored(), IndentString(log.Extra, 4))
 		} else {
-			if log.Extra != "" {
-				fmt.Fprintf(l.out, "%v\n%s\n", l, IndentString(log.Extra, 4))
-			} else {
-				fmt.Fprintln(l.out, l)
-			}
+			fmt.Fprintln(l.out, log.Colored())
+		}
+	} else {
+		if log.Extra != "" {
+			fmt.Fprintf(l.out, "%v\n%s\n", l, IndentString(log.Extra, 4))
+		} else {
+			fmt.Fprintln(l.out, l)
 		}
 	}
+}
+
+// Appends only on the calling logger, on the parent cascade
+// it's also printed out
+func (l *Logger) AppendLog(log Log) {
+	if l.parent != nil {
+		l.parent.addLog(log)
+	}
+	l.logs = append(l.logs, log)
 }
 
 func (l *Logger) Print(level LogLevel, a ...any) {
