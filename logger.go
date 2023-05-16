@@ -13,10 +13,11 @@ import (
 // and saved locally in memory, so that they can be retreived
 // programmatically and used (for example to make a view in a website)
 type Logger struct {
-	parent *Logger
-	out    io.Writer
-	logs   []Log
-	tags   []string
+	parent     *Logger
+	out        io.Writer
+	logs       []Log
+	tags       []string
+	wantExtras bool
 }
 
 func NewLogger(out io.Writer) *Logger {
@@ -43,17 +44,21 @@ func (l *Logger) addLog(log Log) {
 		return
 	}
 
+	if l.out == nil {
+		return
+	}
+
 	if ToTerminal(l.out) {
-		if log.Extra != "" {
-			fmt.Fprintf(l.out, "%v\n%s\n", log.Colored(), IndentString(log.Extra, 4))
+		if log.Extra != "" && l.wantExtras {
+			fmt.Fprintf(l.out, "%s\n%s\n", log.Colored(), IndentString(log.Extra, 4))
 		} else {
 			fmt.Fprintln(l.out, log.Colored())
 		}
 	} else {
-		if log.Extra != "" {
-			fmt.Fprintf(l.out, "%v\n%s\n", l, IndentString(log.Extra, 4))
+		if log.Extra != "" && l.wantExtras {
+			fmt.Fprintf(l.out, "%s\n%s\n", log.String(), IndentString(log.Extra, 4))
 		} else {
-			fmt.Fprintln(l.out, l)
+			fmt.Fprintln(l.out, log)
 		}
 	}
 }
@@ -153,10 +158,10 @@ func (l *Logger) Clone(out io.Writer, tags ...string) *Logger {
 	return logger
 }
 
-func Clone(out io.Writer, tags ...string) *Logger {
-	logger := NewLogger(out)
-	logger.parent = DefaultLogger
-	logger.tags = append(DefaultLogger.tags, tags...)
+func (l *Logger) EnableExtras() {
+	l.wantExtras = true
+}
 
-	return logger
+func (l *Logger) DisableExtras() {
+	l.wantExtras = false
 }
