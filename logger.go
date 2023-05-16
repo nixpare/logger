@@ -27,14 +27,10 @@ func NewLogger(out io.Writer) *Logger {
 	}
 }
 
-var default_logger *Logger
-
-func DefaultLogger() *Logger {
-	return default_logger
-}
+var DefaultLogger *Logger
 
 func init() {
-	default_logger = NewLogger(os.Stdout)
+	DefaultLogger = NewLogger(os.Stdout)
 }
 
 func (l *Logger) addLog(log Log) {
@@ -83,7 +79,7 @@ func (l *Logger) Print(level LogLevel, a ...any) {
 // to populate the extra field of the Log automatically using the built-in function
 // fmt.Sprint(extra...)
 func Print(level LogLevel, a ...any) {
-	default_logger.Print(level, a...)
+	DefaultLogger.Print(level, a...)
 }
 
 func (l *Logger) Printf(level LogLevel, format string, a ...any) {
@@ -95,7 +91,7 @@ func (l *Logger) Printf(level LogLevel, format string, a ...any) {
 // contains a line feed, everything after that will be used to populate the extra field
 // of the Log
 func Printf(level LogLevel, format string, a ...any) {
-	default_logger.Printf(level, format, a...)
+	DefaultLogger.Printf(level, format, a...)
 }
 
 func (l *Logger) Debug(a ...any) {
@@ -103,7 +99,7 @@ func (l *Logger) Debug(a ...any) {
 }
 
 func Debug(a ...any) {
-	default_logger.Debug(a...)
+	DefaultLogger.Debug(a...)
 }
 
 // Logs returns the list of logs stored
@@ -159,8 +155,8 @@ func (l *Logger) Clone(out io.Writer, tags ...string) *Logger {
 
 func Clone(out io.Writer, tags ...string) *Logger {
 	logger := NewLogger(out)
-	logger.parent = default_logger
-	logger.tags = append(default_logger.tags, tags...)
+	logger.parent = DefaultLogger
+	logger.tags = append(DefaultLogger.tags, tags...)
 
 	return logger
 }
