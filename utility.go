@@ -87,3 +87,13 @@ func LogsToJSONIndented(logs []Log, spaces int) []byte {
 
 	return b
 }
+
+func Fatal(a ...any) {
+	DefaultLogger.Print(LOG_LEVEL_FATAL, a...)
+	os.Exit(1)
+}
+
+func Fatalf(format string, a ...any) {
+	DefaultLogger.Printf(LOG_LEVEL_FATAL, format, a...)
+	os.Exit(1)
+}
