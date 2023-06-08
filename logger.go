@@ -177,3 +177,34 @@ func (l *Logger) EnableExtras() {
 func (l *Logger) DisableExtras() {
 	l.wantExtras = false
 }
+
+func (l *Logger) LogsMatch(tags ...string) []Log {
+	lMatch := make([]Log, 0)
+	for _, log := range l.logs {
+		if log.Match(tags...) {
+			lMatch = append(lMatch, log)
+		}
+	}
+	return lMatch
+}
+
+func (l *Logger) LogsMatchAny(tags ...string) []Log {
+	lMatch := make([]Log, 0)
+	for _, log := range l.logs {
+		if log.MatchAny(tags...) {
+			lMatch = append(lMatch, log)
+		}
+	}
+	return lMatch
+}
+
+func (l *Logger) LogsLevelMatchAny(levels ...LogLevel) []Log {
+	lMatch := make([]Log, 0)
+	for _, log := range l.logs {
+		if log.LevelMatchAny(levels...) {
+			lMatch = append(lMatch, log)
+		}
+	}
+	return lMatch
+}
+

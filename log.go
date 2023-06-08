@@ -181,3 +181,39 @@ func (l Log) Full() string {
 		l.Extra,
 	)
 }
+
+func (l Log) Match(tags ...string) bool {
+	for _, matchTag := range tags {
+		var hasMatch bool
+		for _, logTag := range l.Tags {
+			if matchTag == logTag {
+				hasMatch = true
+				break
+			}
+		}
+		if (!hasMatch) {
+			return false
+		}
+	}
+	return true
+}
+
+func (l Log) MatchAny(tags ...string) bool {
+	for _, matchTag := range tags {
+		for _, logTag := range l.Tags {
+			if matchTag == logTag {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (l Log) LevelMatchAny(levels ...LogLevel) bool {
+	for _, level := range levels {
+		if l.Level == level {
+			return true
+		}
+	}
+	return false
+}
