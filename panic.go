@@ -56,16 +56,19 @@ func PanicToErr(f func() error) *PanicError {
 		}
 	}()
 
-	res := <-errChan
-	return res
+	return <-errChan
 }
 
-func (err PanicError) Error() error {
+func (err PanicError) error() error {
 	if err.PanicErr != nil {
 		return fmt.Errorf("%w\n%s", err.PanicErr, IndentString(err.Stack, 2))
 	}
 	
 	return err.Err
+}
+
+func (err PanicError) Error() string {
+	return err.error().Error()
 }
 
 func (err PanicError) Unwrap() error {
@@ -81,6 +84,10 @@ func (err PanicError) Unwrap() error {
 		return unwrap
 	}
 	return res
+}
+
+func (err PanicError) String() string {
+	return err.Error()
 }
 
 // Stack returns the execution stack. This must be called after
