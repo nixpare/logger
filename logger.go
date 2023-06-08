@@ -73,7 +73,19 @@ func (l *Logger) AppendLog(log Log) {
 }
 
 func (l *Logger) Print(level LogLevel, a ...any) {
-	str := fmt.Sprint(a...)
+	var str string
+	first := true
+
+	for _, x := range a {
+		if (first) {
+			first = false
+		} else {
+			str += " "
+		}
+
+		str += fmt.Sprint(x)
+	}
+	
 	message, extra, _ := strings.Cut(str, "\n")
 
 	log := NewLog(level, message, extra, l.tags...)
