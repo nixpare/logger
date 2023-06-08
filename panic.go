@@ -72,18 +72,15 @@ func (err PanicError) Error() string {
 }
 
 func (err PanicError) Unwrap() error {
-	var res error
 	if err.PanicErr != nil {
-		res = err.PanicErr
-	} else if err.Err != nil {
-		res = err.Err
+		return err.PanicErr
 	}
 
-	unwrap := errors.Unwrap(res)
+	unwrap := errors.Unwrap(err.Err)
 	if unwrap != nil {
 		return unwrap
 	}
-	return res
+	return err.Err
 }
 
 func (err PanicError) String() string {
