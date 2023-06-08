@@ -1,6 +1,7 @@
 package logger
 
 import (
+	"encoding/json"
 	"io"
 	"os"
 	"strings"
@@ -62,4 +63,27 @@ func IndentString(s string, n int) string {
 	}
 
 	return strings.TrimRight(res, " \n")
+}
+
+func LogsToJSON(logs []Log) []byte {
+	b, err := json.Marshal(logs)
+	if err != nil {
+		panic(err)
+	}
+
+	return b
+}
+
+func LogsToJSONIndented(logs []Log, spaces int) []byte {
+	indent := ""
+	for i := 0; i < spaces; i++ {
+		indent += " "
+	}
+
+	b, err := json.MarshalIndent(logs, "", indent)
+	if err != nil {
+		panic(err)
+	}
+
+	return b
 }

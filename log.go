@@ -145,17 +145,17 @@ func (l Log) Colored() string {
 
 	if l.Level == LOG_LEVEL_BLANK {
 		return fmt.Sprintf(
-			"%s[%v]%s - %s",
+			"%s[%v]%s - %s%s",
 			BRIGHT_BLACK_COLOR, l.Date.Format(TimeFormat), DEFAULT_COLOR,
-			l.MessageRaw,
+			l.MessageRaw, DEFAULT_COLOR,
 		)
 	}
 
 	return fmt.Sprintf(
-		"%s[%v]%s - %s%v%s: %s",
+		"%s[%v]%s - %s%v%s: %s%s",
 		BRIGHT_BLACK_COLOR, l.Date.Format(TimeFormat), DEFAULT_COLOR,
 		color, l.Level, DEFAULT_COLOR,
-		l.MessageRaw,
+		l.MessageRaw, DEFAULT_COLOR,
 	)
 }
 

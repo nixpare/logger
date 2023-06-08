@@ -1,7 +1,6 @@
 package logger
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -129,27 +128,12 @@ func (l *Logger) Logs() []Log {
 
 // JSON returns the list of logs stored in JSON format (see Log.JSON() method)
 func (l *Logger) JSON() []byte {
-	b, err := json.Marshal(l.Logs())
-	if err != nil {
-		panic(err)
-	}
-
-	return b
+	return LogsToJSON(l.logs)
 }
 
 // JSON returns the list of logs stored in JSON format (see Log.JSON() method)
 func (l *Logger) JSONIndented(spaces int) []byte {
-	indent := ""
-	for i := 0; i < spaces; i++ {
-		indent += " "
-	}
-
-	b, err := json.MarshalIndent(l.Logs(), "", indent)
-	if err != nil {
-		panic(err)
-	}
-
-	return b
+	return LogsToJSONIndented(l.logs, spaces)
 }
 
 func (l *Logger) Write(p []byte) (n int, err error) {
@@ -207,4 +191,3 @@ func (l *Logger) LogsLevelMatchAny(levels ...LogLevel) []Log {
 	}
 	return lMatch
 }
-
