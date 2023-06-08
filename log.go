@@ -186,7 +186,7 @@ func (l Log) Match(tags ...string) bool {
 	for _, matchTag := range tags {
 		var hasMatch bool
 		for _, logTag := range l.Tags {
-			if matchTag == logTag {
+			if strings.ToLower(matchTag) == logTag {
 				hasMatch = true
 				break
 			}
@@ -201,7 +201,7 @@ func (l Log) Match(tags ...string) bool {
 func (l Log) MatchAny(tags ...string) bool {
 	for _, matchTag := range tags {
 		for _, logTag := range l.Tags {
-			if matchTag == logTag {
+			if strings.ToLower(matchTag) == logTag {
 				return true
 			}
 		}

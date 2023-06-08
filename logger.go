@@ -149,6 +149,10 @@ func (l *Logger) Out() io.Writer {
 func (l *Logger) Clone(out io.Writer, tags ...string) *Logger {
 	logger := NewLogger(out)
 	logger.parent = l
+
+	for i := range tags {
+		tags[i] = strings.ToLower(tags[i])
+	}
 	logger.tags = append(l.tags, tags...)
 
 	return logger
