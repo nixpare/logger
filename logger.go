@@ -11,57 +11,77 @@ import (
 // and saved locally in memory, so that they can be retreived
 // programmatically and used (for example to make a view in a website)
 type Logger struct {
-	parent     *Logger
-	out        io.Writer
-	logs       []Log
-	tags       []string
-	wantExtras bool
+	parent      *Logger
+	Out         io.Writer
+	logs        []Log
+	tags        []string
+	wantExtras  bool
+	multiLogger bool
 }
 
 func NewLogger(out io.Writer) *Logger {
 	return &Logger {
-		out: out,
+		Out: out,
 		logs: make([]Log, 0),
-		tags: nil,
+		tags: make([]string, 0),
 	}
 }
 
 var DefaultLogger *Logger
 
-func (l *Logger) addLog(log Log) {
+func (l *Logger) newLog(log *Log, writeOutput bool) {
+	log.AddTags(l.tags...)
+
 	if l.parent != nil {
-		l.parent.addLog(log)
-	}
-
-	l.logs = append(l.logs, log)
-	if l.out == nil {
-		return
-	}
-
-	if l.out == nil {
-		return
-	}
-
-	if ToTerminal(l.out) {
-		if log.Extra != "" && l.wantExtras {
-			fmt.Fprintf(l.out, "%s\n%s\n", log.Colored(), IndentString(log.Extra, 4))
+		/* if !writeOutput {
+			l.parent.newLog(log, writeOutput)
 		} else {
-			fmt.Fprintln(l.out, log.Colored())
+			if l.Out == nil {
+				l.parent.newLog(log, writeOutput)
+			} else {
+				if l.multiLogger && l.Out != l.parent.Out {
+					l.parent.newLog(log, writeOutput)
+				} else {
+					l.parent.newLog(log, false)
+				}
+			}
+		} */
+		// Equivalent to the above
+		if writeOutput && l.Out != nil && (!l.multiLogger || l.Out == l.parent.Out) {
+			l.parent.newLog(log, false)
+		} else {
+			l.parent.newLog(log, writeOutput)
+		}
+	}
+
+	l.logs = append(l.logs, *log)
+
+	if l.Out == nil || !writeOutput {
+		return
+	}
+
+	if ToTerminal(l.Out) {
+		if log.Extra != "" && l.wantExtras {
+			fmt.Fprintf(l.Out, "%s\n%s\n", log.Colored(), IndentString(log.Extra, 4))
+		} else {
+			fmt.Fprintln(l.Out, log.Colored())
 		}
 	} else {
 		if log.Extra != "" && l.wantExtras {
-			fmt.Fprintf(l.out, "%s\n%s\n", log.String(), IndentString(log.Extra, 4))
+			fmt.Fprintf(l.Out, "%s\n%s\n", log.String(), IndentString(log.Extra, 4))
 		} else {
-			fmt.Fprintln(l.out, log)
+			fmt.Fprintln(l.Out, log)
 		}
 	}
 }
 
-// Appends only on the calling logger, on the parent cascade
-// it's also printed out
-func (l *Logger) AppendLog(log Log) {
+// AddLog appends a log without behing printed out
+// on the Logger output or by any parent in cascade
+func (l *Logger) AddLog(log Log) {
+	log.AddTags(l.tags...)
+
 	if l.parent != nil {
-		l.parent.addLog(log)
+		l.parent.AddLog(log)
 	}
 	l.logs = append(l.logs, log)
 }
@@ -83,7 +103,7 @@ func (l *Logger) Print(level LogLevel, a ...any) {
 	message, extra, _ := strings.Cut(str, "\n")
 
 	log := NewLog(level, message, extra, l.tags...)
-	l.addLog(log)
+	l.newLog(log, true)
 }
 
 // Print creates a Log with the given severity and message; any data after message will be used
@@ -137,20 +157,25 @@ func (l *Logger) Write(p []byte) (n int, err error) {
 	return len(message), nil
 }
 
-func (l *Logger) Out() io.Writer {
-	return l.out
+func (l *Logger) Clone(out io.Writer, tags ...string) *Logger {
+	newLogger := NewLogger(out)
+	
+	newLogger.parent = l
+	newLogger.AddTags(tags...)
+
+	return newLogger
 }
 
-func (l *Logger) Clone(out io.Writer, tags ...string) *Logger {
-	logger := NewLogger(out)
-	logger.parent = l
-
-	for i := range tags {
-		tags[i] = strings.ToLower(tags[i])
+func (l *Logger) AddTags(tags ...string) {
+	for _, tag := range tags {
+		tag = strings.ToLower(tag)
+		for _, lTags := range l.tags {
+			if tag == lTags {
+				continue
+			}
+		}
+		l.tags = append(l.tags, tag)
 	}
-	logger.tags = append(l.tags, tags...)
-
-	return logger
 }
 
 func (l *Logger) EnableExtras() {
@@ -159,6 +184,14 @@ func (l *Logger) EnableExtras() {
 
 func (l *Logger) DisableExtras() {
 	l.wantExtras = false
+}
+
+func (l *Logger) EnableMultiLogger() {
+	l.multiLogger = true
+}
+
+func (l *Logger) DisableMultiLogger() {
+	l.multiLogger = false
 }
 
 func (l *Logger) LogsMatch(tags ...string) []Log {

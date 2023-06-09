@@ -89,10 +89,10 @@ type Log struct {
 	Tags       []string  `json:"tags,omitempty"`
 }
 
-func NewLog(level LogLevel, message string, extra string, tags ...string) Log {
+func NewLog(level LogLevel, message string, extra string, tags ...string) *Log {
 	t := time.Now()
 
-	return Log{
+	return &Log{
 		ID: fmt.Sprintf(
 			"%02d%02d%02d%02d%02d%02d%03d",
 			t.Year()%100, t.Month(), t.Day(),
@@ -180,6 +180,20 @@ func (l Log) Full() string {
 		l.Level, l.Message,
 		l.Extra,
 	)
+}
+
+func (l *Log) AddTags(tags ...string) {
+	loop: for _, tag := range tags {
+		tag = strings.ToLower(tag)
+		
+		for _, lTags := range l.Tags {
+			if tag == lTags {
+				continue loop
+			}
+		}
+		
+		l.Tags = append(l.Tags, tag)
+	}
 }
 
 func (l Log) Match(tags ...string) bool {
