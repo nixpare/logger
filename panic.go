@@ -3,7 +3,6 @@ package logger
 import (
 	"errors"
 	"fmt"
-	"log"
 	"runtime/debug"
 	"strings"
 )
@@ -62,7 +61,6 @@ func CapturePanic(f func() error) (panicErr PanicError) {
 // CapturePanic is the same as PanicToErr but returns a plain error
 func PanicToErr(f func() error) error {
 	panicErr := CapturePanic(f)
-	log.Println(panicErr.err == nil, panicErr.panicErr == nil, panicErr.error() == nil)
 	if panicErr.error() == nil {
 		return nil
 	}
