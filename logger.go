@@ -186,6 +186,10 @@ func (l *Logger) DisableExtras() {
 	l.wantExtras = false
 }
 
+func (l *Logger) SetParent(parent *Logger) {
+	l.parent = parent
+}
+
 func (l *Logger) EnableMultiLogger() {
 	l.multiLogger = true
 }
