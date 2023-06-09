@@ -3,7 +3,6 @@ package logger
 import (
 	"fmt"
 	"io"
-	"os"
 	"strings"
 )
 
@@ -28,10 +27,6 @@ func NewLogger(out io.Writer) *Logger {
 }
 
 var DefaultLogger *Logger
-
-func init() {
-	DefaultLogger = NewLogger(os.Stdout)
-}
 
 func (l *Logger) addLog(log Log) {
 	if l.parent != nil {
