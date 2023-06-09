@@ -61,7 +61,7 @@ func CapturePanic(f func() error) (panicErr *PanicError) {
 // CapturePanic is the same as PanicToErr but returns a plain error
 func PanicToErr(f func() error) error {
 	panicErr := CapturePanic(f)
-	if panicErr.error() == nil {
+	if panicErr == nil || panicErr.error() == nil {
 		return nil
 	}
 
