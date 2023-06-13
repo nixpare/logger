@@ -20,8 +20,8 @@ type Logger struct {
 }
 
 func NewLogger(out io.Writer) *Logger {
-	return &Logger {
-		Out: out,
+	return &Logger{
+		Out:  out,
 		logs: make([]Log, 0),
 		tags: make([]string, 0),
 	}
@@ -29,8 +29,8 @@ func NewLogger(out io.Writer) *Logger {
 
 var DefaultLogger *Logger
 
-func (l *Logger) newLog(log *Log, writeOutput bool) {
-	log.AddTags(l.tags...)
+func (l *Logger) newLog(log Log, writeOutput bool) {
+	log.addTags(l.tags...)
 
 	if l.parent != nil {
 		/* if !writeOutput {
@@ -54,36 +54,33 @@ func (l *Logger) newLog(log *Log, writeOutput bool) {
 		}
 	}
 
-	l.logs = append(l.logs, *log)
+	l.logs = append(l.logs, log)
 
 	if l.Out == nil || !writeOutput {
 		return
 	}
 
 	if ToTerminal(l.Out) {
-		if log.Extra != "" && l.wantExtras {
-			fmt.Fprintf(l.Out, "%s\n%s\n", log.Colored(), IndentString(log.Extra, 4))
+		if log.l.extra != "" && l.wantExtras {
+			fmt.Fprintln(l.Out, log.l.fullColored())
 		} else {
-			fmt.Fprintln(l.Out, log.Colored())
+			fmt.Fprintln(l.Out, log.l.colored())
 		}
 	} else {
-		if log.Extra != "" && l.wantExtras {
-			fmt.Fprintf(l.Out, "%s\n%s\n", log.String(), IndentString(log.Extra, 4))
+		if log.l.extra != "" && l.wantExtras {
+			fmt.Fprintln(l.Out, log.l.full())
 		} else {
-			fmt.Fprintln(l.Out, log)
+			fmt.Fprintln(l.Out, log.l.String())
 		}
 	}
 }
 
 // AddLog appends a log without behing printed out
 // on the Logger output or by any parent in cascade
-func (l *Logger) AddLog(log Log) {
-	log.AddTags(l.tags...)
-
-	if l.parent != nil {
-		l.parent.AddLog(log)
-	}
-	l.logs = append(l.logs, log)
+func (l *Logger) AddLog(level LogLevel, message string, extra string, writeOutput bool) {
+	l.newLog(Log{
+		l: newLog(level, message, extra),
+	}, writeOutput)
 }
 
 func (l *Logger) Print(level LogLevel, a ...any) {
@@ -91,7 +88,7 @@ func (l *Logger) Print(level LogLevel, a ...any) {
 	first := true
 
 	for _, x := range a {
-		if (first) {
+		if first {
 			first = false
 		} else {
 			str += " "
@@ -99,11 +96,9 @@ func (l *Logger) Print(level LogLevel, a ...any) {
 
 		str += fmt.Sprint(x)
 	}
-	
-	message, extra, _ := strings.Cut(str, "\n")
 
-	log := NewLog(level, message, extra, l.tags...)
-	l.newLog(log, true)
+	message, extra, _ := strings.Cut(str, "\n")
+	l.AddLog(level, message, extra, true)
 }
 
 // Print creates a Log with the given severity and message; any data after message will be used
@@ -159,7 +154,7 @@ func (l *Logger) Write(p []byte) (n int, err error) {
 
 func (l *Logger) Clone(out io.Writer, tags ...string) *Logger {
 	newLogger := NewLogger(out)
-	
+
 	newLogger.parent = l
 	newLogger.AddTags(tags...)
 
