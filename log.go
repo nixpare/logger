@@ -119,7 +119,7 @@ func (l log) String() string {
 	)
 }
 
-func (l log) Colored() string {
+func (l log) colored() string {
 	var color string
 	switch l.level {
 	case LOG_LEVEL_INFO:
@@ -150,9 +150,9 @@ func (l log) Colored() string {
 	)
 }
 
-// Full is like String(), but appends all the extra information
+// full is like String(), but appends all the extra information
 // associated with the log instance
-func (l log) Full() string {
+func (l log) full() string {
 	if l.extra == "" {
 		return l.String()
 	}
@@ -174,9 +174,9 @@ func (l log) Full() string {
 
 // Full is like String(), but appends all the extra information
 // associated with the log instance
-func (l log) FullColored() string {
+func (l log) fullColored() string {
 	if l.extra == "" {
-		return l.Colored()
+		return l.colored()
 	}
 
 	var color string
@@ -353,6 +353,14 @@ func (l Log) String() string {
 	return l.l.String()
 }
 
+func (l Log) Colored() string {
+	return l.l.colored()
+}
+
 func (l Log) Full() string {
-	return l.l.Full()
+	return l.l.full()
+}
+
+func (l Log) FullColored() string {
+	return l.l.fullColored()
 }
