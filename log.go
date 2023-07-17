@@ -119,7 +119,7 @@ func (l log) String() string {
 	)
 }
 
-func (l log) colored() string {
+func (l log) Colored() string {
 	var color string
 	switch l.level {
 	case LOG_LEVEL_INFO:
@@ -152,7 +152,7 @@ func (l log) colored() string {
 
 // Full is like String(), but appends all the extra information
 // associated with the log instance
-func (l log) full() string {
+func (l log) Full() string {
 	if l.extra == "" {
 		return l.String()
 	}
@@ -174,9 +174,9 @@ func (l log) full() string {
 
 // Full is like String(), but appends all the extra information
 // associated with the log instance
-func (l log) fullColored() string {
+func (l log) FullColored() string {
 	if l.extra == "" {
-		return l.colored()
+		return l.Colored()
 	}
 
 	var color string
@@ -252,15 +252,16 @@ func (l Log) Tags() []string {
 }
 
 func (l *Log) addTags(tags ...string) {
-	loop: for _, tag := range tags {
+loop:
+	for _, tag := range tags {
 		tag = strings.ToLower(tag)
-		
+
 		for _, lTags := range l.tags {
 			if tag == lTags {
 				continue loop
 			}
 		}
-		
+
 		l.tags = append(l.tags, tag)
 	}
 }
@@ -330,11 +331,11 @@ func (l *Log) UnmarshalJSON(data []byte) error {
 	}
 
 	l.l = &log{
-		id: decodedLog.ID,
-		level: decodedLog.Level,
-		date: decodedLog.Date,
+		id:      decodedLog.ID,
+		level:   decodedLog.Level,
+		date:    decodedLog.Date,
 		message: decodedLog.Message,
-		extra: decodedLog.Extra,
+		extra:   decodedLog.Extra,
 	}
 	l.tags = decodedLog.Tags
 
@@ -353,5 +354,5 @@ func (l Log) String() string {
 }
 
 func (l Log) Full() string {
-	return l.l.full()
+	return l.l.Full()
 }

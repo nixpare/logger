@@ -62,13 +62,13 @@ func (l *Logger) newLog(log Log, writeOutput bool) {
 
 	if ToTerminal(l.Out) {
 		if log.l.extra != "" && l.wantExtras {
-			fmt.Fprintln(l.Out, log.l.fullColored())
+			fmt.Fprintln(l.Out, log.l.FullColored())
 		} else {
-			fmt.Fprintln(l.Out, log.l.colored())
+			fmt.Fprintln(l.Out, log.l.Colored())
 		}
 	} else {
 		if log.l.extra != "" && l.wantExtras {
-			fmt.Fprintln(l.Out, log.l.full())
+			fmt.Fprintln(l.Out, log.l.Full())
 		} else {
 			fmt.Fprintln(l.Out, log.l.String())
 		}
