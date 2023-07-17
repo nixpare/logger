@@ -24,6 +24,7 @@ func NewLogger(out io.Writer) *Logger {
 		Out:  out,
 		logs: make([]Log, 0),
 		tags: make([]string, 0),
+		wantExtras: true,
 	}
 }
 
