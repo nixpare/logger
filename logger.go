@@ -3,6 +3,7 @@ package logger
 import (
 	"fmt"
 	"io"
+	"os"
 	"strings"
 )
 
@@ -61,17 +62,22 @@ func (l *Logger) newLog(log Log, writeOutput bool) {
 		return
 	}
 
+	out := l.Out
+	if level := log.Level(); out == os.Stdout && (level == LOG_LEVEL_WARNING || level == LOG_LEVEL_ERROR || level == LOG_LEVEL_FATAL) {
+		out = os.Stderr
+	}
+
 	if ToTerminal(l.Out) {
 		if log.l.extra != "" && l.wantExtras {
-			fmt.Fprintln(l.Out, log.l.fullColored())
+			fmt.Fprintln(out, log.l.fullColored())
 		} else {
-			fmt.Fprintln(l.Out, log.l.colored())
+			fmt.Fprintln(out, log.l.colored())
 		}
 	} else {
 		if log.l.extra != "" && l.wantExtras {
-			fmt.Fprintln(l.Out, log.l.full())
+			fmt.Fprintln(out, log.l.full())
 		} else {
-			fmt.Fprintln(l.Out, log.l.String())
+			fmt.Fprintln(out, log.l.String())
 		}
 	}
 }

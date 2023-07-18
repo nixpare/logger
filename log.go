@@ -16,7 +16,7 @@ var (
 type LogLevel int
 
 const (
-	LOG_LEVEL_BLANK = iota
+	LOG_LEVEL_BLANK LogLevel = iota
 	LOG_LEVEL_INFO
 	LOG_LEVEL_DEBUG
 	LOG_LEVEL_WARNING
