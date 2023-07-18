@@ -164,12 +164,18 @@ func (l *Logger) Clone(out io.Writer, tags ...string) *Logger {
 
 func (l *Logger) AddTags(tags ...string) {
 	for _, tag := range tags {
+		tag = strings.TrimSpace(tag)
+		if tag == "" {
+			continue
+		}
+
 		tag = strings.ToLower(tag)
 		for _, lTags := range l.tags {
 			if tag == lTags {
 				continue
 			}
 		}
+		
 		l.tags = append(l.tags, tag)
 	}
 }
