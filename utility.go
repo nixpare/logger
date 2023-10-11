@@ -97,3 +97,33 @@ func Fatalf(format string, a ...any) {
 	DefaultLogger.Printf(LOG_LEVEL_FATAL, format, a...)
 	os.Exit(1)
 }
+
+func LogsMatch(logs []Log, tags ...string) []Log {
+	lMatch := make([]Log, 0)
+	for _, log := range logs {
+		if log.Match(tags...) {
+			lMatch = append(lMatch, log)
+		}
+	}
+	return lMatch
+}
+
+func LogsMatchAny(logs []Log, tags ...string) []Log {
+	lMatch := make([]Log, 0)
+	for _, log := range logs {
+		if log.MatchAny(tags...) {
+			lMatch = append(lMatch, log)
+		}
+	}
+	return lMatch
+}
+
+func LogsLevelMatch(logs []Log, levels ...LogLevel) []Log {
+	lMatch := make([]Log, 0)
+	for _, log := range logs {
+		if log.LevelMatchAny(levels...) {
+			lMatch = append(lMatch, log)
+		}
+	}
+	return lMatch
+}
