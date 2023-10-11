@@ -17,12 +17,11 @@ type Logger interface {
 	Clone(out io.Writer, tags ...string) Logger
 	Debug(a ...any)
 	DisableExtras()
-	DisableMultiLogger()
 	EnableExtras()
-	EnableMultiLogger()
 	GetLastNLogs(n int) []Log
+	GetLog(index int) Log
 	GetLogs(start int, end int) []Log
-	newLog(log Log, writeOutput bool) *Log
+	newLog(log Log, writeOutput bool) int
 	NLogs() int
 	Out() io.Writer
 	Print(level LogLevel, a ...any)
@@ -34,45 +33,36 @@ type logger struct {
 	out         io.Writer
 	logs        logStorage
 	tags        []string
-	wantExtras  bool
-	multiLogger bool
+	disableExtras  bool
 }
 
 var DefaultLogger Logger
 
 func NewLogger(out io.Writer, tags ...string) Logger {
 	return &logger{
-		out:  out,
+		out: out,
 		logs: &memLogStorage{
-			a: make([]Log, 0),
+			v:   make([]Log, 0),
 			rwm: new(sync.RWMutex),
 		},
-		tags: tags,
-		wantExtras: true,
+		tags:       tags,
 	}
 }
 
-/* func NewHugeLogger(out io.Writer, dir string, prefix string, tags ...string) (*Logger, error) {
-	info, err := os.Stat(dir)
+func NewHugeLogger(out io.Writer, dir string, prefix string, tags ...string) (Logger, error) {
+	fls, err := initFileLogStorage(dir, prefix)
 	if err != nil {
 		return nil, err
 	}
 
-	if !info.IsDir() {
-		return nil, errors.New("the provided path is not a directory")
-	}
-
-	return &Logger{
-		Out:  out,
-		logs: fileLogStorage{
-			
-		},
+	return &logger{
+		out:  out,
+		logs: fls,
 		tags: tags,
-		wantExtras: true,
 	}, nil
-} */
+}
 
-func (l *logger) newLog(log Log, writeOutput bool) *Log {
+func (l *logger) newLog(log Log, writeOutput bool) int {
 	log.addTags(l.tags...)
 	p := l.logs.addLog(log)
 
@@ -86,13 +76,13 @@ func (l *logger) newLog(log Log, writeOutput bool) *Log {
 	}
 
 	if ToTerminal(l.out) {
-		if log.l.extra != "" && l.wantExtras {
+		if log.l.extra != "" && !l.disableExtras {
 			fmt.Fprintln(out, log.l.fullColored())
 		} else {
 			fmt.Fprintln(out, log.l.colored())
 		}
 	} else {
-		if log.l.extra != "" && l.wantExtras {
+		if log.l.extra != "" && !l.disableExtras {
 			fmt.Fprintln(out, log.l.full())
 		} else {
 			fmt.Fprintln(out, log.l.String())
@@ -167,6 +157,10 @@ func (l *logger) Out() io.Writer {
 	return l.out
 }
 
+func (l *logger) GetLog(index int) Log {
+	return l.logs.getLog(index)
+}
+
 func (l *logger) GetLastNLogs(n int) []Log {
 	tot := l.logs.nLogs()
 	if n > tot {
@@ -190,26 +184,18 @@ func (l *logger) Write(p []byte) (n int, err error) {
 }
 
 func (l *logger) EnableExtras() {
-	l.wantExtras = true
+	l.disableExtras = false
 }
 
 func (l *logger) DisableExtras() {
-	l.wantExtras = false
-}
-
-func (l *logger) EnableMultiLogger() {
-	l.multiLogger = true
-}
-
-func (l *logger) DisableMultiLogger() {
-	l.multiLogger = false
+	l.disableExtras = true
 }
 
 func (l *logger) Clone(out io.Writer, tags ...string) Logger {
 	return &cloneLogger{
-		out:  out,
-		tags: tags,
-		wantExtras: l.wantExtras,
-		parent: l,
+		out:        out,
+		tags:       tags,
+		disableExtras: l.disableExtras,
+		parent:     l,
 	}
 }

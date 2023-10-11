@@ -6,40 +6,34 @@ import (
 	"os"
 )
 
+type clonedLog struct {
+	parent Logger
+	index  int
+}
+
 type cloneLogger struct {
 	parent Logger
 	tags []string
-	logs []*Log
+	logs []clonedLog
 	out io.Writer
-	wantExtras  bool
-	multiLogger bool
+	disableExtras  bool
 }
 
-func (l *cloneLogger) newLog(log Log, writeOutput bool) *Log {
+func (l *cloneLogger) newLog(log Log, writeOutput bool) int {
 	log.addTags(l.tags...)
 
-	/* if !writeOutput {
-		l.parent.newLog(log, writeOutput)
-	} else {
-		if l.out == nil {
-			l.parent.newLog(log, writeOutput)
-		} else {
-			if l.multiLogger && l.out != l.parent.Out {
-				l.parent.newLog(log, writeOutput)
-			} else {
-				l.parent.newLog(log, false)
-			}
-		}
-	} */
-	// Equivalent to the above
-	var p *Log
-	if writeOutput && l.out != nil && (!l.multiLogger || l.out == l.parent.Out()) {
+	var p int
+	if writeOutput && l.out != nil && l.out == l.parent.Out() {
 		p = l.parent.newLog(log, false)
 	} else {
 		p = l.parent.newLog(log, writeOutput)
 	}
 
-	l.logs = append(l.logs, p)
+	l.logs = append(l.logs, clonedLog{
+		parent: l.parent,
+		index: p,
+	})
+	p = len(l.logs) - 1
 
 	if l.out == nil || !writeOutput {
 		return p
@@ -51,13 +45,13 @@ func (l *cloneLogger) newLog(log Log, writeOutput bool) *Log {
 	}
 
 	if ToTerminal(l.out) {
-		if log.l.extra != "" && l.wantExtras {
+		if log.l.extra != "" && !l.disableExtras {
 			fmt.Fprintln(out, log.l.fullColored())
 		} else {
 			fmt.Fprintln(out, log.l.colored())
 		}
 	} else {
-		if log.l.extra != "" && l.wantExtras {
+		if log.l.extra != "" && !l.disableExtras {
 			fmt.Fprintln(out, log.l.full())
 		} else {
 			fmt.Fprintln(out, log.l.String())
@@ -77,25 +71,22 @@ func (l *cloneLogger) Clone(out io.Writer, tags ...string) Logger {
 	return &cloneLogger{
 		out:  out,
 		tags: tags,
-		wantExtras: l.wantExtras,
+		disableExtras: l.disableExtras,
 		parent: l,
 	}
 }
 
 func (l *cloneLogger) DisableExtras() {
-	l.wantExtras = false
-}
-
-func (l *cloneLogger) DisableMultiLogger() {
-	l.multiLogger = false
+	l.disableExtras = true
 }
 
 func (l *cloneLogger) EnableExtras() {
-	l.wantExtras = true
+	l.disableExtras = false
 }
 
-func (l *cloneLogger) EnableMultiLogger() {
-	l.multiLogger = true
+func (l *cloneLogger) GetLog(index int) Log {
+	cl := l.logs[index]
+	return cl.parent.GetLog(cl.index)
 }
 
 func (l *cloneLogger) GetLastNLogs(n int) []Log {
@@ -109,7 +100,8 @@ func (l *cloneLogger) GetLastNLogs(n int) []Log {
 func (l *cloneLogger) GetLogs(start int, end int) []Log {
 	res := make([]Log, 0, end-start)
 	for i := start; i < end; i++ {
-		res = append(res, *l.logs[i])
+		cl := l.logs[i]
+		res = append(res, cl.parent.GetLog(cl.index))
 	}
 	return res
 }
