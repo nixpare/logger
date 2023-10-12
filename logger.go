@@ -21,6 +21,7 @@ type Logger interface {
 	GetLastNLogs(n int) []Log
 	GetLog(index int) Log
 	GetLogs(start int, end int) []Log
+	GetSpecificLogs(logs []int) []Log
 	newLog(log Log, writeOutput bool) int
 	NLogs() int
 	Out() io.Writer
@@ -119,7 +120,7 @@ func print(l Logger, level LogLevel, a ...any) {
 }
 
 func (l *logger) Print(level LogLevel, a ...any) {
-	print(l, level, a)
+	print(l, level, a...)
 }
 
 // Print creates a Log with the given severity and message; any data after message will be used
@@ -171,6 +172,10 @@ func (l *logger) GetLastNLogs(n int) []Log {
 
 func (l *logger) GetLogs(start, end int) []Log {
 	return l.logs.getLogs(start, end)
+}
+
+func (l *logger) GetSpecificLogs(logs []int) []Log {
+	return l.logs.getSpecificLogs(logs)
 }
 
 func write(l Logger, p []byte) (n int, err error) {

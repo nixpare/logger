@@ -6,15 +6,10 @@ import (
 	"os"
 )
 
-type clonedLog struct {
-	parent Logger
-	index  int
-}
-
 type cloneLogger struct {
 	parent Logger
 	tags []string
-	logs []clonedLog
+	logs []int
 	out io.Writer
 	disableExtras  bool
 }
@@ -29,10 +24,7 @@ func (l *cloneLogger) newLog(log Log, writeOutput bool) int {
 		p = l.parent.newLog(log, writeOutput)
 	}
 
-	l.logs = append(l.logs, clonedLog{
-		parent: l.parent,
-		index: p,
-	})
+	l.logs = append(l.logs, p)
 	p = len(l.logs) - 1
 
 	if l.out == nil || !writeOutput {
@@ -85,8 +77,8 @@ func (l *cloneLogger) EnableExtras() {
 }
 
 func (l *cloneLogger) GetLog(index int) Log {
-	cl := l.logs[index]
-	return cl.parent.GetLog(cl.index)
+	p := l.logs[index]
+	return l.parent.GetLog(p)
 }
 
 func (l *cloneLogger) GetLastNLogs(n int) []Log {
@@ -98,12 +90,17 @@ func (l *cloneLogger) GetLastNLogs(n int) []Log {
 }
 
 func (l *cloneLogger) GetLogs(start int, end int) []Log {
-	res := make([]Log, 0, end-start)
+	logsToParent := make([]int, 0, end-start)
 	for i := start; i < end; i++ {
-		cl := l.logs[i]
-		res = append(res, cl.parent.GetLog(cl.index))
+		logsToParent = append(logsToParent, i)
 	}
-	return res
+	return l.parent.GetSpecificLogs(logsToParent)
+}
+
+func (l *cloneLogger) GetSpecificLogs(logs []int) []Log {
+	logsToParent := make([]int, 0, len(logs))
+	logsToParent = append(logsToParent, l.logs...)
+	return l.parent.GetSpecificLogs(logsToParent)
 }
 
 func (l *cloneLogger) NLogs() int {
@@ -115,7 +112,7 @@ func (l *cloneLogger) Out() io.Writer {
 }
 
 func (l *cloneLogger) Print(level LogLevel, a ...any) {
-	print(l, level, a)
+	print(l, level, a...)
 }
 
 func (l *cloneLogger) Printf(level LogLevel, format string, a ...any) {
