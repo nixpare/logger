@@ -13,7 +13,11 @@ import (
 
 var LogFileTimeFormat = "06.01.02-15.04.05"
 
-var LogChunkSize = 4
+var (
+	LogChunkSize = 1000
+	LogFilePrefixLen = 4
+	LogFileExtension = "data"
+)
 
 type logStorage interface {
 	addLog(l Log) int
@@ -96,7 +100,7 @@ func initFileLogStorage(dir, prefix string) (*fileLogStorage, error) {
 		return nil, errors.New("the provided path is not a directory")
 	}
 
-	fls.f, err = createNewFileStorage(fls, 0)
+	fls.f, err = os.Create(fls.fileNameGeneration(0))
 	if err != nil {
 		return nil, err
 	}
@@ -104,8 +108,9 @@ func initFileLogStorage(dir, prefix string) (*fileLogStorage, error) {
 	return fls, nil
 }
 
-func createNewFileStorage(fls *fileLogStorage, index int) (*os.File, error) {
-	return os.Create(fls.dir + "/" + fls.prefix + fmt.Sprintf("%04d", index))
+func (fls *fileLogStorage) fileNameGeneration(index int) string {
+	format := fmt.Sprintf("%%s/%%s%%0%dd.%s", LogFilePrefixLen, LogFileExtension)
+	return fmt.Sprintf(format, fls.dir, fls.prefix, index)
 }
 
 func (fls *fileLogStorage) addLog(l Log) int {
@@ -123,7 +128,7 @@ func (fls *fileLogStorage) addLog(l Log) int {
 			fls.f.Close()
 			fls.chunks ++
 
-			f, err := createNewFileStorage(fls, fls.chunks)
+			f, err := os.Create(fls.fileNameGeneration(fls.chunks))
 			if err != nil {
 				panic(err)
 			}
@@ -137,16 +142,15 @@ func (fls *fileLogStorage) addLog(l Log) int {
 	return p
 }
 
-func openNewFileStorage(fls *fileLogStorage, index int) (*os.File, error) {
-	Debug("Open")
-	return os.Open(fls.dir + "/" + fls.prefix + fmt.Sprintf("%04d", index))
-}
-
 func (fls *fileLogStorage) getLog(index int) Log {
 	fls.rwm.RLock()
 	defer fls.rwm.RUnlock()
 
-	if index >= fls.n - LogChunkSize {
+	switch {
+	case fls.n <= LogChunkSize: {
+		return fls.cache[index]
+	}
+	case index >= fls.n - LogChunkSize:
 		index = index - (fls.n - LogChunkSize) + fls.cacheHead
 		index %= LogChunkSize
 		return fls.cache[index]
@@ -155,7 +159,7 @@ func (fls *fileLogStorage) getLog(index int) Log {
 	fNum := index / LogChunkSize
 	index = index % LogChunkSize
 
-	f, err := openNewFileStorage(fls, fNum)
+	f, err := os.Open(fls.fileNameGeneration(fNum))
 	if err != nil {
 		panic(err)
 	}
@@ -196,7 +200,7 @@ func (fls fileLogStorage) splitRequestRange(start, end int) (res []interval) {
 				start: start,
 				end: end,
 			})
-			return res
+			return
 		}
 	}
 
@@ -212,7 +216,7 @@ func (fls fileLogStorage) splitRequestRange(start, end int) (res []interval) {
 	}
 	res = append(res, inter)
 
-	return res
+	return
 }
 
 func (fls*fileLogStorage) getLogs(start, end int) []Log {
@@ -230,7 +234,7 @@ func (fls*fileLogStorage) getLogs(start, end int) []Log {
 		} else {
 			fNum := x.start / LogChunkSize
 
-			f, err := openNewFileStorage(fls, fNum)
+			f, err := os.Open(fls.fileNameGeneration(fNum))
 			if err != nil {
 				panic(err)
 			}
@@ -258,8 +262,33 @@ func (fls*fileLogStorage) getLogs(start, end int) []Log {
 	return res
 }
 
-func splitRequestSingle(logs []int) [][]int {
-	res := make([][]int, 0)
+func (fls fileLogStorage) splitRequestSingle(logs []int) (res [][]int) {
+	if len(logs) == 0 {
+		return
+	}
+
+	if logs[len(logs)-1] >= fls.n - LogChunkSize {
+		var inter []int
+		var i int
+
+		func() {
+			for i = len(logs)-2; i >= 0 && logs[i] >= fls.n - LogChunkSize; i-- {
+				defer func(p int) {
+					inter = append(inter, p)
+				}(logs[i])
+			}
+		}()
+		inter = append(inter, logs[len(logs)-1])
+
+		defer func(inter []int) {
+			res = append(res, inter)
+		}(inter)
+		logs = logs[:i+1]
+	}
+
+	if len(logs) == 0 {
+		return
+	}
 
 	inter := []int{logs[0]}
 	for i := 1; i < len(logs); i++ {
@@ -273,27 +302,25 @@ func splitRequestSingle(logs []int) [][]int {
 	}
 	res = append(res, inter)
 
-	return res
+	return
 }
 
 func (fls*fileLogStorage) getSpecificLogs(logs []int) []Log {
 	fls.rwm.RLock()
 	defer fls.rwm.RUnlock()
 
-	inter := splitRequestSingle(logs)
+	inter := fls.splitRequestSingle(logs)
 	res := make([]Log, 0, len(logs))
 
-	Debug(inter)
-
 	for _, i := range inter {
-		if i[0] / LogChunkSize == fls.chunks {
+		if i[0] >= fls.n - LogChunkSize {
 			for _, p := range i {
 				res = append(res, fls.getLog(p))
 			}
 		} else {
 			fNum := i[0] / LogChunkSize
 
-			f, err := openNewFileStorage(fls, fNum)
+			f, err := os.Open(fls.fileNameGeneration(fNum))
 			if err != nil {
 				panic(err)
 			}

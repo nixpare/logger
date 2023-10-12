@@ -94,9 +94,8 @@ func newLog(level LogLevel, message string, extra string) *log {
 
 	return &log{
 		id: fmt.Sprintf(
-			"%02d%02d%02d%02d%02d%02d%03d",
-			t.Year()%100, t.Month(), t.Day(),
-			t.Hour(), t.Minute(), t.Second(), rand.Intn(1000),
+			"%d%03d",
+			t.UnixNano() / 1000, rand.Intn(1000),
 		),
 		level: level, date: t,
 		message: message, extra: extra,

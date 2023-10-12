@@ -91,15 +91,15 @@ func (l *cloneLogger) GetLastNLogs(n int) []Log {
 
 func (l *cloneLogger) GetLogs(start int, end int) []Log {
 	logsToParent := make([]int, 0, end-start)
-	for i := start; i < end; i++ {
-		logsToParent = append(logsToParent, i)
-	}
+	logsToParent = append(logsToParent, l.logs[start:end]...)
 	return l.parent.GetSpecificLogs(logsToParent)
 }
 
 func (l *cloneLogger) GetSpecificLogs(logs []int) []Log {
 	logsToParent := make([]int, 0, len(logs))
-	logsToParent = append(logsToParent, l.logs...)
+	for _, p := range logs {
+		logsToParent = append(logsToParent, l.logs[p])
+	}
 	return l.parent.GetSpecificLogs(logsToParent)
 }
 
