@@ -8,24 +8,66 @@ import (
 	"sync"
 )
 
-// Logger is used by the Router and can be used by the user to
-// create logs that are both written to the chosen io.Writer (if any)
-// and saved locally in memory, so that they can be retreived
-// programmatically and used (for example to make a view in a website)
+// Logger handles the logging. There are three types of Logger, depending on
+// the way they save the logs: NewLogger() creates a Logger which saved every
+// log in memory, NewHugeLogger() creates a Logger which keeps the most recent
+// logs in memory and saves every logs in the filesystem, the method Clone() of
+// every Logger creates a pseudo-Logger. You can read more in the package
+// documentation for other info and usage senarios.
+// For every Logger type, there is an io.Writer, which can be used to specify
+// where to write the logs, and a list of tags, which will be given to every
+// Log created with this Logger (in this way you can implement a filter to get
+// only the logs you need).
+// Logger also implements the io.Writer interface, so can be used to use it as
+// a standard output: every write call corresponds to a Log with level
+// logger.LOG_LEVEL_BLANK
 type Logger interface {
+	// AddLog can be used to manually create a Log, writeOutput can be set to false
+	// if you also want the log to not be written to the io.Writer associated with
+	// the Logger
 	AddLog(level LogLevel, message string, extra string, writeOutput bool)
+	// Clone creates a pseudo-Logger that leans on the calling Logger, called the parent logger.
+	// You can specify dditional tags that will be inherited by every log created with
+	// this logger, in addition to every tags owned by the parent logger. If you specify an out
+	// io.Writer, every log will be also writter to this destination
 	Clone(out io.Writer, tags ...string) Logger
+	// Debug is a shorthand for Print(logger.LOG_LEVEL_DEBUG, a...), can be handy while debugging
+	// some code. See interface method Print for more information
 	Debug(a ...any)
+	// DisableExtras tells the Logger to not write the Extra field of the Logs created to the
+	// out io.Writer (it will always be saved, so it can be accessed manually)
 	DisableExtras()
+	// EnableExtras tells the Logger to write the Extra field of the Logs created to the
+	// out io.Writer. This is the default behaviour
 	EnableExtras()
+	// GetLastNLogs return the last Logs created by the Logger. If the number of logs asked is
+	// greater than the total amount of logs created, the method will return every log saved
+	// without errors
 	GetLastNLogs(n int) []Log
+	// GetLog returns a specific Log: being the "0" log the first created and the "nth-1" log the
+	// nth created. Use the method NLogs() to know the total number of logs saved. It's not safe
+	// to call it with an out-of-range index
 	GetLog(index int) Log
+	// GetLogs return every log in the interval [start ; end). It's not safe to call it with out-of-range
+	// values
 	GetLogs(start int, end int) []Log
+	// GetSpecificLogs can be used to retrieve a list of logs. The argument holds the indexes of the
+	// logs wanted
 	GetSpecificLogs(logs []int) []Log
+	// newLog creates a new log, tells wether it should be written to the out io.Writer and returns
+	// the index of the newly log created for this specific Logger
 	newLog(log Log, writeOutput bool) int
+	// NLogs returns the number of logs saved in the logger
 	NLogs() int
+	// Out returns the same io.Writer provided at creation time
 	Out() io.Writer
+	// Print behaves has the fmt.Print or log.Print from the standard library, but if
+	// the resulting output contains a line feed, everything after that will be used to
+	// populate the extra field of the Log
 	Print(level LogLevel, a ...any)
+	// Printf behaves has the fmt.Printf or log.Printf from the standard library, but if
+	// the resulting output contains a line feed, everything after that will be used to
+	// populate the extra field of the Log
 	Printf(level LogLevel, format string, a ...any)
 	Write(p []byte) (n int, err error)
 }
@@ -37,8 +79,15 @@ type logger struct {
 	disableExtras  bool
 }
 
+// DefaultLogger is the Logger used by the function in this package
+// (like logger.Print, logger.Debug, ecc) and is initialized as a
+// standard logger (logs are saved only in memory). Can be changed
+// at any time and every process using this logger will reflect the
+// change
 var DefaultLogger Logger
 
+// NewLogger creates a standard logger, which saves the logs only in
+// memory. Read the Logger interface docs for other informations
 func NewLogger(out io.Writer, tags ...string) Logger {
 	return &logger{
 		out: out,
@@ -50,6 +99,10 @@ func NewLogger(out io.Writer, tags ...string) Logger {
 	}
 }
 
+// NewLogger creates a logger that keeps in memory the most recent logs and
+// saves everything in files divided in clusters. The dir parameter tells the
+// logger in which directory to save the logs' files. The prefix, instead, tells
+// the logger how to name the files. Read the Logger interface docs for other informations
 func NewHugeLogger(out io.Writer, dir string, prefix string, tags ...string) (Logger, error) {
 	fls, err := initFileLogStorage(dir, prefix)
 	if err != nil {
@@ -93,8 +146,6 @@ func (l *logger) newLog(log Log, writeOutput bool) int {
 	return p
 }
 
-// AddLog appends a log without behing printed out
-// on the Logger output or by any parent in cascade
 func (l *logger) AddLog(level LogLevel, message string, extra string, writeOutput bool) {
 	l.newLog(Log{
 		l: newLog(level, message, extra),
@@ -123,9 +174,8 @@ func (l *logger) Print(level LogLevel, a ...any) {
 	print(l, level, a...)
 }
 
-// Print creates a Log with the given severity and message; any data after message will be used
-// to populate the extra field of the Log automatically using the built-in function
-// fmt.Sprint(extra...)
+// Print is a shorthand for logger.DefaultLogger.Print, see Logger interface
+// method description for any information
 func Print(level LogLevel, a ...any) {
 	DefaultLogger.Print(level, a...)
 }
@@ -134,10 +184,8 @@ func (l *logger) Printf(level LogLevel, format string, a ...any) {
 	l.Print(level, fmt.Sprintf(format, a...))
 }
 
-// Printf creates a Log with the given severity; the rest of the arguments is used as
-// the built-in function fmt.Sprintf(format, a...), however if the resulting string
-// contains a line feed, everything after that will be used to populate the extra field
-// of the Log
+// Printf is a shorthand for logger.DefaultLogger.Printf, see Logger interface
+// method description for any information
 func Printf(level LogLevel, format string, a ...any) {
 	DefaultLogger.Printf(level, format, a...)
 }
@@ -146,6 +194,8 @@ func (l *logger) Debug(a ...any) {
 	l.Print(LOG_LEVEL_DEBUG, a...)
 }
 
+// Debug is a shorthand for logger.DefaultLogger.Debug, see Logger interface
+// method description for any information
 func Debug(a ...any) {
 	DefaultLogger.Debug(a...)
 }

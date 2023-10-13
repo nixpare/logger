@@ -9,7 +9,7 @@ import (
 )
 
 var (
-	TimeFormat = "2006-01-02 15:04:05.00" // TimeFormat defines which timestamp to use with the logs. It can be modified.
+	TimeFormat = "2006-01-02 15:04:05.00" // TimeFormat defines which timestamp to use with the logs
 )
 
 // LogLevel defines the severity of a Log. See the constants
@@ -75,10 +75,10 @@ func (level *LogLevel) UnmarshalJSON(b []byte) error {
 
 type log struct {
 	id      string
-	level   LogLevel  // Level is the Log severity (INFO - DEBUG - WARNING - ERROR - FATAL)
-	date    time.Time // Date is the timestamp of the log creation
-	message string    // Message is the main message that should summarize the event
-	extra   string    // Extra should hold any extra information provided for deeper understanding of the event
+	level   LogLevel
+	date    time.Time
+	message string
+	extra   string
 }
 
 func (l log) cleanMessage() string {
@@ -149,8 +149,6 @@ func (l log) colored() string {
 	)
 }
 
-// full is like String(), but appends all the extra information
-// associated with the log instance
 func (l log) full() string {
 	if l.extra == "" {
 		return l.String()
@@ -171,8 +169,6 @@ func (l log) full() string {
 	)
 }
 
-// Full is like String(), but appends all the extra information
-// associated with the log instance
 func (l log) fullColored() string {
 	if l.extra == "" {
 		return l.colored()
@@ -208,11 +204,12 @@ func (l log) fullColored() string {
 	)
 }
 
-// Log is the structure that can be will store any log reported
-// with Logger. It keeps the error severity level (see the constants)
-// the date it was created and the message associated with it (probably
-// an error). It also has the optional field "extra" that can be used to
-// store additional information
+// Log holds every information. It keeps the error severity level (see the constants),
+// the time it was created at and the message associated with it. 
+// It also has the optional field "extra" that can be used to store additional information:
+// Automatically everything after the first new line will be stored there. By default it
+// will be displayed with an indentation, but you can hide it by calling the Logger method
+// DisableExtras()
 type Log struct {
 	l    *log
 	tags []string
@@ -234,6 +231,10 @@ func (l Log) Message() string {
 	return l.l.cleanMessage()
 }
 
+// RawMessage returns the logger message (as the Message() method) unmodified:
+// if the Logger output is a terminal, the logger will automatically decorate
+// the message with terminal colors. This method gives you back not only the message
+// but also every terminal character for the color-handling
 func (l Log) RawMessage() string {
 	return l.l.message
 }
@@ -242,6 +243,8 @@ func (l Log) Extra() string {
 	return l.l.cleanExtra()
 }
 
+// RawExtra returns the logger extra information (as the Extra() method) unmodified:
+// see the method RawMessage() for other informations.
 func (l Log) RawExtra() string {
 	return l.l.extra
 }
@@ -265,6 +268,8 @@ loop:
 	}
 }
 
+// Match returns true if the Log has every tag you
+// have provided, otherwise returns false
 func (l Log) Match(tags ...string) bool {
 	for _, matchTag := range tags {
 		var hasMatch bool
@@ -281,6 +286,8 @@ func (l Log) Match(tags ...string) bool {
 	return true
 }
 
+// MatchAny returns true if the Log has at least one of
+// the tags you have provided, otherwise returns false
 func (l Log) MatchAny(tags ...string) bool {
 	for _, matchTag := range tags {
 		for _, logTag := range l.tags {
@@ -292,6 +299,8 @@ func (l Log) MatchAny(tags ...string) bool {
 	return false
 }
 
+// LevelMatchAny returns true if the Log has one of the
+// log levels you have provided, otherwise returns false
 func (l Log) LevelMatchAny(levels ...LogLevel) bool {
 	for _, level := range levels {
 		if l.Level() == level {
@@ -341,8 +350,7 @@ func (l *Log) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// JSON returns the Log l in a json-encoded string in form of a
-// slice of bytes
+// JSON returns the Log in a json-encoded string
 func (l Log) JSON() []byte {
 	b, _ := json.Marshal(l)
 	return b
@@ -352,14 +360,18 @@ func (l Log) String() string {
 	return l.l.String()
 }
 
+// Colored returns the message with the terminal decorations
 func (l Log) Colored() string {
 	return l.l.colored()
 }
 
+// Full return the message and the extras together
 func (l Log) Full() string {
 	return l.l.full()
 }
 
+// FullColored return the message and the extras together with
+// the terminal decorations
 func (l Log) FullColored() string {
 	return l.l.fullColored()
 }
