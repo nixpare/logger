@@ -11,11 +11,18 @@ import (
 	"time"
 )
 
-var LogFileTimeFormat = "06.01.02-15.04.05"
-
 var (
+	// LogFileTimeFormat is the format that is used to create
+	// the log files for the HugeLogger. It must not be changed
+	// after the creation of the first HugeLogger, otherwise logs
+	// with the old format will be lost
+	LogFileTimeFormat = "06.01.02-15.04.05"
+	// LogChunkSize determines both the numbers of logs kept in memory
+	// and the number of logs saved in each file. It must not be changed
+	// after the creation of the first HugeLogger
 	LogChunkSize = 1000
-	LogFilePrefixLen = 4
+	// LogFileExtension can be used to change the file extenstion of the
+	// log files
 	LogFileExtension = "data"
 )
 
@@ -109,8 +116,7 @@ func initFileLogStorage(dir, prefix string) (*fileLogStorage, error) {
 }
 
 func (fls *fileLogStorage) fileNameGeneration(index int) string {
-	format := fmt.Sprintf("%%s/%%s%%0%dd.%s", LogFilePrefixLen, LogFileExtension)
-	return fmt.Sprintf(format, fls.dir, fls.prefix, index)
+	return fmt.Sprintf("%s/%s%d.%s", fls.dir, fls.prefix, index, LogFileExtension)
 }
 
 func (fls *fileLogStorage) addLog(l Log) int {
@@ -126,8 +132,8 @@ func (fls *fileLogStorage) addLog(l Log) int {
 
 		if fls.n % LogChunkSize == 0 {
 			fls.f.Close()
-			fls.chunks ++
 
+			fls.chunks ++
 			f, err := os.Create(fls.fileNameGeneration(fls.chunks))
 			if err != nil {
 				panic(err)

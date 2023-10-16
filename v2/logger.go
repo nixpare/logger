@@ -124,26 +124,30 @@ func (l *logger) newLog(log Log, writeOutput bool) int {
 		return p
 	}
 
-	out := l.out
+	logToOut(l, log, l.disableExtras)
+
+	return p
+}
+
+func logToOut(l Logger, log Log, disableExtras bool) {
+	out := l.Out()
 	if level := log.Level(); out == os.Stdout && (level == LOG_LEVEL_WARNING || level == LOG_LEVEL_ERROR || level == LOG_LEVEL_FATAL) {
 		out = os.Stderr
 	}
 
-	if ToTerminal(l.out) {
-		if log.l.extra != "" && !l.disableExtras {
+	if ToTerminal(out) {
+		if log.l.extra != "" && !disableExtras {
 			fmt.Fprintln(out, log.l.fullColored())
 		} else {
 			fmt.Fprintln(out, log.l.colored())
 		}
 	} else {
-		if log.l.extra != "" && !l.disableExtras {
+		if log.l.extra != "" && !disableExtras {
 			fmt.Fprintln(out, log.l.full())
 		} else {
 			fmt.Fprintln(out, log.l.String())
 		}
 	}
-
-	return p
 }
 
 func (l *logger) AddLog(level LogLevel, message string, extra string, writeOutput bool) {

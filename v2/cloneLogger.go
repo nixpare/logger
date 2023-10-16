@@ -3,9 +3,12 @@ package logger
 import (
 	"fmt"
 	"io"
-	"os"
 )
 
+// cloneLogger implements the Logger interface and basically
+// maps every log is created with it (or any child in cascade)
+// with the index associated with the same log for the parent,
+// whichever type of Logger it is.
 type cloneLogger struct {
 	parent Logger
 	tags []string
@@ -31,24 +34,7 @@ func (l *cloneLogger) newLog(log Log, writeOutput bool) int {
 		return p
 	}
 
-	out := l.out
-	if level := log.Level(); out == os.Stdout && (level == LOG_LEVEL_WARNING || level == LOG_LEVEL_ERROR || level == LOG_LEVEL_FATAL) {
-		out = os.Stderr
-	}
-
-	if ToTerminal(l.out) {
-		if log.l.extra != "" && !l.disableExtras {
-			fmt.Fprintln(out, log.l.fullColored())
-		} else {
-			fmt.Fprintln(out, log.l.colored())
-		}
-	} else {
-		if log.l.extra != "" && !l.disableExtras {
-			fmt.Fprintln(out, log.l.full())
-		} else {
-			fmt.Fprintln(out, log.l.String())
-		}
-	}
+	logToOut(l, log, l.disableExtras)
 
 	return p
 }
