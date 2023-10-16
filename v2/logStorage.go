@@ -75,13 +75,13 @@ func (s memLogStorage) nLogs() int {
 }
 
 type fileLogStorage struct {
-	n int
-	chunks int
-	cache []Log
-	cacheHead int
-	dir string
-	prefix string
-	f *os.File
+	n int 				// n is the number of logs stored
+	chunks int 			// chunks is the number of files created to store the logs
+	cache []Log 		// cache holds the most recent logs, it is a circular list
+	cacheHead int 		// cacheHead points to the start of the cache
+	dir string 			// dir is the directory where the files are saved
+	prefix string 		// prefix holds the identifier of the log files and the timestamp
+	f *os.File 			// f is the last log file opened for writing
 	rwm *sync.RWMutex
 }
 
