@@ -1,2 +1,2 @@
-# Logger
-Logger adds the option to write colored output
+# Logger (deprecated)
+Use Logger v2 (`github.com/nixpare/logger/v2`)
