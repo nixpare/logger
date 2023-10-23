@@ -23,6 +23,8 @@ type memLogger struct {
 }
 
 func (l *memLogger) newLog(log Log, writeOutput bool) int {
+	l.counter++
+
 	l.rwm.Lock()
 	defer l.rwm.Unlock()
 
@@ -43,8 +45,6 @@ func (l *memLogger) newLog(log Log, writeOutput bool) int {
 }
 
 func (l *memLogger) AddLog(level LogLevel, message string, extra string, writeOutput bool) {
-	l.counter++
-
 	l.newLog(Log{
 		l: newLog(level, message, extra),
 	}, writeOutput)
@@ -120,7 +120,7 @@ func (l *memLogger) Clone(out io.Writer, parentOut bool, tags ...string) Logger 
 }
 
 func (l *memLogger) checkHeavyLoad() {
-	ticker := time.NewTicker(time.Second)
+	ticker := time.NewTicker(ScanInterval)
 	var exitLoop bool
 
 	stopC := make(chan struct{})
@@ -135,17 +135,19 @@ func (l *memLogger) checkHeavyLoad() {
 	for !exitLoop {
 		select {
 		case <-ticker.C:
-			if l.counter > MaxLogsPerSec {
+			if l.counter > MaxLogsPerScan {
+				l.counter = 0
 				l.heavyLoad = true
 			} else {
+				l.counter = 0
 				l.heavyLoad = false
-				l.alignOutput()
+				go l.alignOutput(false)
 			}
-			l.counter = 0
 		case <-stopC:
 			exitLoop = true
 			ticker.Stop()
-			l.alignOutput()
+
+			l.alignOutput(true)
 		}
 	}
 
@@ -162,7 +164,7 @@ func (l *memLogger) Close() {
 	l.stopBc.SendAndWait(struct{}{})
 }
 
-func (l *memLogger) alignOutput() {
+func (l *memLogger) alignOutput(empty bool) {
 	l.outM.Lock()
 	defer l.outM.Unlock()
 
@@ -171,12 +173,18 @@ func (l *memLogger) alignOutput() {
 	}
 
 	for {
-		l.rwm.RLock()
-		logs := l.v[l.lastWrote+1:]
-		l.rwm.RUnlock()
+		if !empty && l.heavyLoad {
+			break
+		}
+
+		logs := l.GetLastNLogs(l.NLogs() - l.lastWrote - 1)
 
 		if len(logs) == 0 {
 			break
+		}
+
+		if len(logs) > MaxLogsPerScan {
+			logs = logs[:MaxLogsPerScan]
 		}
 
 		for _, log := range logs {

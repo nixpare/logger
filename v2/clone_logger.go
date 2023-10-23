@@ -41,11 +41,13 @@ func newCloneLogger(parent Logger, out io.Writer, parentOut bool, tags []string,
 		outM:           new(sync.Mutex),
 		stopBc:         comms.NewBroadcaster[struct{}](),
 	}
-	
+
 	return l
 }
 
 func (l *cloneLogger) newLog(log Log, writeOutput bool) int {
+	l.counter++
+
 	log.addTags(l.tags...)
 
 	var p int
@@ -74,8 +76,6 @@ func (l *cloneLogger) newLog(log Log, writeOutput bool) int {
 }
 
 func (l *cloneLogger) AddLog(level LogLevel, message string, extra string, writeOutput bool) {
-	l.counter++
-
 	l.newLog(Log{
 		l: newLog(level, message, extra),
 	}, writeOutput)
@@ -121,7 +121,7 @@ func (l *cloneLogger) GetLogs(start int, end int) []Log {
 func (l *cloneLogger) GetSpecificLogs(logs []int) []Log {
 	l.rwm.RLock()
 	defer l.rwm.RUnlock()
-	
+
 	logsToParent := make([]int, 0, len(logs))
 	for _, p := range logs {
 		logsToParent = append(logsToParent, l.v[p])
@@ -154,7 +154,7 @@ func (l *cloneLogger) Write(p []byte) (n int, err error) {
 }
 
 func (l *cloneLogger) checkHeavyLoad() {
-	ticker := time.NewTicker(time.Second)
+	ticker := time.NewTicker(ScanInterval)
 	var exitLoop bool
 
 	stopC := make(chan struct{})
@@ -169,17 +169,19 @@ func (l *cloneLogger) checkHeavyLoad() {
 	for !exitLoop {
 		select {
 		case <-ticker.C:
-			if l.counter > MaxLogsPerSec {
+			if l.counter > MaxLogsPerScan {
+				l.counter = 0
 				l.heavyLoad = true
 			} else {
+				l.counter = 0
 				l.heavyLoad = false
-				l.alignOutput()
+				go l.alignOutput(false)
 			}
-			l.counter = 0
 		case <-stopC:
 			exitLoop = true
 			ticker.Stop()
-			l.alignOutput()
+
+			l.alignOutput(true)
 		}
 	}
 
@@ -196,19 +198,27 @@ func (l *cloneLogger) Close() {
 	l.stopBc.SendAndWait(struct{}{})
 }
 
-func (l *cloneLogger) alignOutput() {
+func (l *cloneLogger) alignOutput(empty bool) {
 	l.outM.Lock()
 	defer l.outM.Unlock()
 
-	if len(l.v) == 0 {
+	if l.NLogs() == 0 {
 		return
 	}
 
 	for {
+		if !empty && l.heavyLoad {
+			break
+		}
+
 		logs := l.GetLastNLogs(l.NLogs() - l.lastWrote - 1)
 
 		if len(logs) == 0 {
 			break
+		}
+
+		if len(logs) > MaxLogsPerScan {
+			logs = logs[:MaxLogsPerScan]
 		}
 
 		for _, log := range logs {

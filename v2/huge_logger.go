@@ -18,11 +18,13 @@ type hugeLogger struct {
 	heavyLoad      bool
 	lastWrote      int
 	rwm            *sync.RWMutex
-	outM           *sync.Mutex   // outM handles access to out
+	outM           *sync.Mutex // outM handles access to out
 	stopBc         *comms.Broadcaster[struct{}]
 }
 
 func (l *hugeLogger) newLog(log Log, writeOutput bool) int {
+	l.counter++
+
 	l.rwm.Lock()
 	defer l.rwm.Unlock()
 
@@ -43,8 +45,6 @@ func (l *hugeLogger) newLog(log Log, writeOutput bool) int {
 }
 
 func (l *hugeLogger) AddLog(level LogLevel, message string, extra string, writeOutput bool) {
-	l.counter++
-
 	l.newLog(Log{
 		l: newLog(level, message, extra),
 	}, writeOutput)
@@ -116,7 +116,7 @@ func (l *hugeLogger) Clone(out io.Writer, parentOut bool, tags ...string) Logger
 }
 
 func (l *hugeLogger) checkHeavyLoad() {
-	ticker := time.NewTicker(time.Second)
+	ticker := time.NewTicker(ScanInterval)
 	var exitLoop bool
 
 	stopC := make(chan struct{})
@@ -131,17 +131,19 @@ func (l *hugeLogger) checkHeavyLoad() {
 	for !exitLoop {
 		select {
 		case <-ticker.C:
-			if l.counter > MaxLogsPerSec {
+			if l.counter > MaxLogsPerScan {
+				l.counter = 0
 				l.heavyLoad = true
 			} else {
+				l.counter = 0
 				l.heavyLoad = false
-				l.alignOutput()
+				go l.alignOutput(false)
 			}
-			l.counter = 0
 		case <-stopC:
 			exitLoop = true
 			ticker.Stop()
-			l.alignOutput()
+
+			l.alignOutput(true)
 		}
 	}
 
@@ -158,7 +160,7 @@ func (l *hugeLogger) Close() {
 	l.stopBc.SendAndWait(struct{}{})
 }
 
-func (l *hugeLogger) alignOutput() {
+func (l *hugeLogger) alignOutput(empty bool) {
 	l.outM.Lock()
 	defer l.outM.Unlock()
 
@@ -166,21 +168,29 @@ func (l *hugeLogger) alignOutput() {
 		return
 	}
 
+	logs := l.GetLastNLogs(l.NLogs() - l.lastWrote - 1)
+
 	for {
-		l.rwm.RLock()
-		logs := l.fls.getLogs(l.lastWrote+1, l.NLogs())
-		l.rwm.RUnlock()
+		if !empty && l.heavyLoad {
+			break
+		}
 
 		if len(logs) == 0 {
 			break
 		}
 
-		for _, log := range logs {
+		v := logs
+		if len(v) > MaxLogsPerScan {
+			v = v[:MaxLogsPerScan]
+		}
+		logs = logs[len(v):]
+
+		for _, log := range v {
 			logToOut(l, log, l.extrasDisabled)
 		}
 
 		l.rwm.Lock()
-		l.lastWrote += len(logs)
+		l.lastWrote += len(v)
 		l.rwm.Unlock()
 	}
 }

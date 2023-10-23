@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/nixpare/comms"
 )
@@ -99,20 +100,21 @@ var (
 	// log files
 	LogFileExtension = "data"
 
-	MaxLogsPerSec = 1000
+	MaxLogsPerScan = 1000
+	ScanInterval   = 200 * time.Millisecond
 )
 
 // NewLogger creates a standard logger, which saves the logs only in
 // memory. Read the Logger interface docs for other informations
 func NewLogger(out io.Writer, tags ...string) Logger {
 	return &memLogger{
-		out:        out,
-		v:          make([]Log, 0),
-		tags:       tags,
-		lastWrote:  -1,
-		rwm:        new(sync.RWMutex),
-		outM:       new(sync.Mutex),
-		stopBc:     comms.NewBroadcaster[struct{}](),
+		out:       out,
+		v:         make([]Log, 0),
+		tags:      tags,
+		lastWrote: -1,
+		rwm:       new(sync.RWMutex),
+		outM:      new(sync.Mutex),
+		stopBc:    comms.NewBroadcaster[struct{}](),
 	}
 }
 
