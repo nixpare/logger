@@ -112,3 +112,7 @@ func (l *cloneLogger) Debug(a ...any) {
 func (l *cloneLogger) Write(p []byte) (n int, err error) {
 	return write(l, p)
 }
+
+func (l *cloneLogger) Close() {
+	panic("To be implemented")
+}
