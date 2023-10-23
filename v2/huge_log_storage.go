@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sync"
 	"time"
 )
 
@@ -19,7 +18,6 @@ type hugeLogStorage struct {
 	dir       string   // dir is the directory where the files are saved
 	prefix    string   // prefix holds the identifier of the log files and the timestamp
 	f         *os.File // f is the last log file opened for writing
-	rwm       *sync.RWMutex
 }
 
 func initFileLogStorage(dir, prefix string) (*hugeLogStorage, error) {
@@ -32,7 +30,6 @@ func initFileLogStorage(dir, prefix string) (*hugeLogStorage, error) {
 		cache:  make([]Log, 0),
 		dir:    dir,
 		prefix: fmt.Sprintf("%s-%s-", prefix, time.Now().Format(LogFileTimeFormat)),
-		rwm:    new(sync.RWMutex),
 	}
 
 	info, err := os.Stat(dir)
@@ -56,11 +53,7 @@ func (fls *hugeLogStorage) fileNameGeneration(index int) string {
 	return fmt.Sprintf("%s/%s%d.%s", fls.dir, fls.prefix, index, LogFileExtension)
 }
 
-func (fls *hugeLogStorage) addLog(l Log) int {
-	fls.rwm.Lock()
-	defer fls.rwm.Unlock()
-
-	p := fls.n
+func (fls *hugeLogStorage) addLog(l Log) {
 	if len(fls.cache) < LogChunkSize {
 		fls.cache = append(fls.cache, l)
 	} else {
@@ -78,17 +71,13 @@ func (fls *hugeLogStorage) addLog(l Log) int {
 			fls.f = f
 		}
 	}
-	fls.n++
+	fls.n ++
 
 	fls.f.Write(l.JSON())
 	fls.f.Write([]byte{'\n'})
-	return p
 }
 
 func (fls *hugeLogStorage) getLog(index int) Log {
-	fls.rwm.RLock()
-	defer fls.rwm.RUnlock()
-
 	switch {
 	case fls.n <= LogChunkSize:
 		{
@@ -164,9 +153,6 @@ func (fls hugeLogStorage) splitRequestRange(start, end int) (res []interval) {
 }
 
 func (fls *hugeLogStorage) getLogs(start, end int) []Log {
-	fls.rwm.RLock()
-	defer fls.rwm.RUnlock()
-
 	inter := fls.splitRequestRange(start, end)
 	res := make([]Log, 0, end-start)
 
@@ -250,9 +236,6 @@ func (fls hugeLogStorage) splitRequestSingle(logs []int) (res [][]int) {
 }
 
 func (fls *hugeLogStorage) getSpecificLogs(logs []int) []Log {
-	fls.rwm.RLock()
-	defer fls.rwm.RUnlock()
-
 	inter := fls.splitRequestSingle(logs)
 	res := make([]Log, 0, len(logs))
 

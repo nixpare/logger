@@ -10,30 +10,34 @@ import (
 )
 
 type hugeLogger struct {
-	out             io.Writer
-	fls             *hugeLogStorage
-	tags            []string
-	extrasDisabled  bool
-	counter         int
-	heavyLoad       bool
-	lastWrote       int
-	writingM        *sync.Mutex
-	stopBc          *comms.Broadcaster[struct{}]
+	out            io.Writer
+	fls            *hugeLogStorage
+	tags           []string
+	extrasDisabled bool
+	counter        int
+	heavyLoad      bool
+	nextWrite      int
+	rwm            *sync.Mutex
+	stopBc         *comms.Broadcaster[struct{}]
 }
 
 func (l *hugeLogger) newLog(log Log, writeOutput bool) int {
+	l.rwm.Lock()
+	defer l.rwm.Unlock()
+
 	log.addTags(l.tags...)
-	p := l.fls.addLog(log)
+	l.fls.addLog(log)
+	p := l.fls.n - 1
 
 	if l.out == nil || !writeOutput {
+		if l.nextWrite == p {
+			l.nextWrite++
+		}
 		return p
 	}
 
-	l.writingM.Lock()
-	defer l.writingM.Unlock()
-
-	if !l.heavyLoad && l.lastWrote == p-1 {
-		l.lastWrote = p
+	if !l.heavyLoad && l.nextWrite == p {
+		l.nextWrite++
 		logToOut(l, log, l.extrasDisabled)
 	}
 
@@ -101,13 +105,13 @@ func (l *hugeLogger) DisableExtras() {
 }
 
 func (l *hugeLogger) Clone(out io.Writer, parentOut bool, tags ...string) Logger {
-	return newCloneLogger(l, out, tags, l.extrasDisabled, parentOut)
+	return newCloneLogger(l, out, parentOut, tags, l.extrasDisabled)
 }
 
 func (l *hugeLogger) checkHeavyLoad() {
 	ticker := time.NewTicker(time.Second)
 	var exitLoop bool
-	
+
 	stopC := make(chan struct{})
 	defer close(stopC)
 
@@ -116,12 +120,12 @@ func (l *hugeLogger) checkHeavyLoad() {
 		stopMsg = l.stopBc.Listen()
 		stopC <- struct{}{}
 	}()
-	
+
 	var alignInProgress bool
 
 	for !exitLoop {
 		select {
-		case <- ticker.C:
+		case <-ticker.C:
 			if l.counter > MaxLogsPerSec {
 				l.heavyLoad = true
 			} else {
@@ -132,11 +136,11 @@ func (l *hugeLogger) checkHeavyLoad() {
 						alignInProgress = false
 					}()
 				}
-				
+
 				l.heavyLoad = false
 			}
 			l.counter = 0
-		case <- stopC:
+		case <-stopC:
 			ticker.Stop()
 			l.alignOutput()
 			exitLoop = true
@@ -159,11 +163,11 @@ func (l *hugeLogger) alignOutput() {
 		return
 	}
 
-	l.writingM.Lock()
-	defer l.writingM.Unlock()
+	l.rwm.Lock()
+	defer l.rwm.Unlock()
 
 	for {
-		logs := l.fls.getLogs(l.lastWrote+1, l.fls.n)
+		logs := l.fls.getLogs(l.nextWrite, l.fls.n)
 		if len(logs) == 0 {
 			break
 		}
@@ -171,6 +175,6 @@ func (l *hugeLogger) alignOutput() {
 		for _, log := range logs {
 			logToOut(l, log, l.extrasDisabled)
 		}
-		l.lastWrote += len(logs)
+		l.nextWrite += len(logs)
 	}
 }

@@ -10,36 +10,33 @@ import (
 )
 
 type memLogger struct {
-	out             io.Writer
-	v               []Log
-	rwm             *sync.RWMutex
-	tags            []string
-	extrasDisabled  bool
-	counter         int
-	heavyLoad       bool
-	lastWrote       int
-	writingM        *sync.Mutex
-	stopBc          *comms.Broadcaster[struct{}]
+	out            io.Writer
+	v              []Log
+	tags           []string
+	extrasDisabled bool
+	counter        int
+	heavyLoad      bool
+	lastWrote      int
+	rwm            *sync.RWMutex // rwm handles access to v and lastWrote
+	outM           *sync.Mutex   // outM handles access to out
+	stopBc         *comms.Broadcaster[struct{}]
 }
 
 func (l *memLogger) newLog(log Log, writeOutput bool) int {
-	log.addTags(l.tags...)
-
 	l.rwm.Lock()
+	defer l.rwm.Unlock()
+
+	log.addTags(l.tags...)
 	l.v = append(l.v, log)
 	p := len(l.v) - 1
-	l.rwm.Unlock()
-
-	if l.out == nil || !writeOutput {
-		return p
-	}
-
-	l.writingM.Lock()
-	defer l.writingM.Unlock()
 
 	if !l.heavyLoad && l.lastWrote == p-1 {
 		l.lastWrote = p
-		logToOut(l, log, l.extrasDisabled)
+		if l.out != nil && writeOutput {
+			l.outM.Lock()
+			logToOut(l, log, l.extrasDisabled)
+			l.outM.Unlock()
+		}
 	}
 
 	return p
@@ -117,13 +114,13 @@ func (l *memLogger) DisableExtras() {
 }
 
 func (l *memLogger) Clone(out io.Writer, parentOut bool, tags ...string) Logger {
-	return newCloneLogger(l, out, tags, l.extrasDisabled, parentOut)
+	return newCloneLogger(l, out, parentOut, tags, l.extrasDisabled)
 }
 
 func (l *memLogger) checkHeavyLoad() {
 	ticker := time.NewTicker(time.Second)
 	var exitLoop bool
-	
+
 	stopC := make(chan struct{})
 	defer close(stopC)
 
@@ -132,30 +129,21 @@ func (l *memLogger) checkHeavyLoad() {
 		stopMsg = l.stopBc.Listen()
 		stopC <- struct{}{}
 	}()
-	
-	var alignInProgress bool
 
 	for !exitLoop {
 		select {
-		case <- ticker.C:
+		case <-ticker.C:
 			if l.counter > MaxLogsPerSec {
 				l.heavyLoad = true
 			} else {
-				if !alignInProgress {
-					go func() {
-						alignInProgress = true
-						l.alignOutput()
-						alignInProgress = false
-					}()
-				}
-				
 				l.heavyLoad = false
+				l.alignOutput()
 			}
 			l.counter = 0
-		case <- stopC:
+		case <-stopC:
+			exitLoop = true
 			ticker.Stop()
 			l.alignOutput()
-			exitLoop = true
 		}
 	}
 
@@ -173,15 +161,18 @@ func (l *memLogger) Close() {
 }
 
 func (l *memLogger) alignOutput() {
+	l.outM.Lock()
+	defer l.outM.Unlock()
+
 	if len(l.v) == 0 {
 		return
 	}
 
-	l.writingM.Lock()
-	defer l.writingM.Unlock()
-
 	for {
+		l.rwm.RLock()
 		logs := l.v[l.lastWrote+1:]
+		l.rwm.RUnlock()
+
 		if len(logs) == 0 {
 			break
 		}
@@ -189,6 +180,9 @@ func (l *memLogger) alignOutput() {
 		for _, log := range logs {
 			logToOut(l, log, l.extrasDisabled)
 		}
+
+		l.rwm.Lock()
 		l.lastWrote += len(logs)
+		l.rwm.Unlock()
 	}
 }

@@ -14,31 +14,31 @@ import (
 // with the index associated with the same log for the parent,
 // whichever type of Logger it is.
 type cloneLogger struct {
-	parent          Logger
-	tags            []string
-	v               []int
-	rwm             *sync.RWMutex
-	out             io.Writer
-	extrasDisabled  bool
-	parentOut       bool
-	counter         int
-	heavyLoad       bool
-	lastWrote       int
-	writingM        *sync.Mutex
-	stopBc          *comms.Broadcaster[struct{}]
+	out            io.Writer
+	v              []int
+	tags           []string
+	extrasDisabled bool
+	parent         Logger
+	parentOut      bool
+	counter        int
+	heavyLoad      bool
+	lastWrote      int
+	rwm            *sync.RWMutex // rwm handles access to v and lastWrote
+	outM           *sync.Mutex   // outM handles access to out
+	stopBc         *comms.Broadcaster[struct{}]
 }
 
-func newCloneLogger(parent Logger, out io.Writer, tags []string, extrasDisabled bool, parentOut bool) *cloneLogger {
+func newCloneLogger(parent Logger, out io.Writer, parentOut bool, tags []string, extrasDisabled bool) *cloneLogger {
 	l := &cloneLogger{
-		parent:         parent,
 		out:            out,
 		v:              make([]int, 0),
-		rwm:            new(sync.RWMutex),
 		tags:           tags,
 		extrasDisabled: extrasDisabled,
+		parent:         parent,
 		parentOut:      parentOut,
 		lastWrote:      -1,
-		writingM:       new(sync.Mutex),
+		rwm:            new(sync.RWMutex),
+		outM:           new(sync.Mutex),
 		stopBc:         comms.NewBroadcaster[struct{}](),
 	}
 	
@@ -56,20 +56,18 @@ func (l *cloneLogger) newLog(log Log, writeOutput bool) int {
 	}
 
 	l.rwm.Lock()
+	defer l.rwm.Unlock()
+
 	l.v = append(l.v, p)
 	p = len(l.v) - 1
-	l.rwm.Unlock()
-
-	if l.out == nil || !writeOutput {
-		return p
-	}
-
-	l.writingM.Lock()
-	defer l.writingM.Unlock()
 
 	if !l.heavyLoad && l.lastWrote == p-1 {
 		l.lastWrote = p
-		logToOut(l, log, l.extrasDisabled)
+		if l.out != nil && writeOutput {
+			l.outM.Lock()
+			logToOut(l, log, l.extrasDisabled)
+			l.outM.Unlock()
+		}
 	}
 
 	return p
@@ -84,7 +82,7 @@ func (l *cloneLogger) AddLog(level LogLevel, message string, extra string, write
 }
 
 func (l *cloneLogger) Clone(out io.Writer, parentOut bool, tags ...string) Logger {
-	return newCloneLogger(l, out, tags, l.extrasDisabled, parentOut)
+	return newCloneLogger(l, out, parentOut, tags, l.extrasDisabled)
 }
 
 func (l *cloneLogger) DisableExtras() {
@@ -158,7 +156,7 @@ func (l *cloneLogger) Write(p []byte) (n int, err error) {
 func (l *cloneLogger) checkHeavyLoad() {
 	ticker := time.NewTicker(time.Second)
 	var exitLoop bool
-	
+
 	stopC := make(chan struct{})
 	defer close(stopC)
 
@@ -167,30 +165,21 @@ func (l *cloneLogger) checkHeavyLoad() {
 		stopMsg = l.stopBc.Listen()
 		stopC <- struct{}{}
 	}()
-	
-	var alignInProgress bool
 
 	for !exitLoop {
 		select {
-		case <- ticker.C:
+		case <-ticker.C:
 			if l.counter > MaxLogsPerSec {
 				l.heavyLoad = true
 			} else {
-				if !alignInProgress {
-					go func() {
-						alignInProgress = true
-						l.alignOutput()
-						alignInProgress = false
-					}()
-				}
-				
 				l.heavyLoad = false
+				l.alignOutput()
 			}
 			l.counter = 0
-		case <- stopC:
+		case <-stopC:
+			exitLoop = true
 			ticker.Stop()
 			l.alignOutput()
-			exitLoop = true
 		}
 	}
 
@@ -208,15 +197,16 @@ func (l *cloneLogger) Close() {
 }
 
 func (l *cloneLogger) alignOutput() {
+	l.outM.Lock()
+	defer l.outM.Unlock()
+
 	if len(l.v) == 0 {
 		return
 	}
 
-	l.writingM.Lock()
-	defer l.writingM.Unlock()
-
 	for {
 		logs := l.GetLastNLogs(l.NLogs() - l.lastWrote - 1)
+
 		if len(logs) == 0 {
 			break
 		}
@@ -224,6 +214,9 @@ func (l *cloneLogger) alignOutput() {
 		for _, log := range logs {
 			logToOut(l, log, l.extrasDisabled)
 		}
+
+		l.rwm.Lock()
 		l.lastWrote += len(logs)
+		l.rwm.Unlock()
 	}
 }
