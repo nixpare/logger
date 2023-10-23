@@ -5,73 +5,100 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sync"
 	"time"
 )
 
-var (
-	// LogFileTimeFormat is the format that is used to create
-	// the log files for the HugeLogger. It must not be changed
-	// after the creation of the first HugeLogger, otherwise logs
-	// with the old format will be lost
-	LogFileTimeFormat = "06.01.02-15.04.05"
-	// LogChunkSize determines both the numbers of logs kept in memory
-	// and the number of logs saved in each file. It must not be changed
-	// after the creation of the first HugeLogger
-	LogChunkSize = 1000
-	// LogFileExtension can be used to change the file extenstion of the
-	// log files
-	LogFileExtension = "data"
-)
+func (l *hugeLogger) newLog(log Log, writeOutput bool) int {
+	log.addTags(l.tags...)
+	p := l.storage.addLog(log)
 
-type logStorage interface {
-	addLog(l Log) int
-	getLog(index int) Log
-	getLogs(start, end int) []Log
-	getSpecificLogs(logs []int) []Log
-	nLogs() int
-}
-
-type memLogStorage struct {
-	v []Log
-	rwm *sync.RWMutex
-}
-
-func (s *memLogStorage) addLog(l Log) int {
-	s.rwm.Lock()
-	defer s.rwm.Unlock()
-
-	s.v = append(s.v, l)
-	return len(s.v)-1
-}
-
-func (s memLogStorage) getLog(index int) Log {
-	s.rwm.RLock()
-	defer s.rwm.RUnlock()
-	return s.v[index]
-}
-
-func (s memLogStorage) getLogs(start, end int) []Log {
-	s.rwm.RLock()
-	defer s.rwm.RUnlock()
-	return s.v[start:end]
-}
-
-func (s memLogStorage) getSpecificLogs(logs []int) []Log {
-	s.rwm.RLock()
-	defer s.rwm.RUnlock()
-
-	res := make([]Log, 0, len(logs))
-	for _, p := range logs {
-		res = append(res, s.v[p])
+	if l.out == nil || !writeOutput {
+		return p
 	}
-	return res
+
+	if !l.heavyLoad {
+		logToOut(l, log, l.disableExtras)
+		return p
+	}
+
+	return p
 }
 
-func (s memLogStorage) nLogs() int {
-	return len(s.v)
+func (l *hugeLogger) AddLog(level LogLevel, message string, extra string, writeOutput bool) {
+	l.counter++
+
+	l.newLog(Log{
+		l: newLog(level, message, extra),
+	}, writeOutput)
+}
+
+func (l *hugeLogger) Print(level LogLevel, a ...any) {
+	print(l, level, a...)
+}
+
+func (l *hugeLogger) Printf(level LogLevel, format string, a ...any) {
+	l.Print(level, fmt.Sprintf(format, a...))
+}
+
+func (l *hugeLogger) Debug(a ...any) {
+	l.Print(LOG_LEVEL_DEBUG, a...)
+}
+
+func (l *hugeLogger) NLogs() int {
+	return l.storage.nLogs()
+}
+
+func (l *hugeLogger) Out() io.Writer {
+	return l.out
+}
+
+func (l *hugeLogger) GetLog(index int) Log {
+	return l.storage.getLog(index)
+}
+
+func (l *hugeLogger) GetLastNLogs(n int) []Log {
+	tot := l.storage.nLogs()
+	if n > tot {
+		n = tot
+	}
+	return l.GetLogs(tot-n, tot)
+}
+
+func (l *hugeLogger) GetLogs(start, end int) []Log {
+	return l.storage.getLogs(start, end)
+}
+
+func (l *hugeLogger) GetSpecificLogs(logs []int) []Log {
+	return l.storage.getSpecificLogs(logs)
+}
+
+func (l *hugeLogger) Write(p []byte) (n int, err error) {
+	return write(l, p)
+}
+
+func (l *hugeLogger) EnableExtras() {
+	l.disableExtras = false
+}
+
+func (l *hugeLogger) DisableExtras() {
+	l.disableExtras = true
+}
+
+func (l *hugeLogger) Clone(out io.Writer, tags ...string) Logger {
+	return &cloneLogger{
+		out:           out,
+		tags:          tags,
+		disableExtras: l.disableExtras,
+		parent:        l,
+	}
+}
+
+func (l *hugeLogger) Close() {
+	l.stopC <- struct{}{}
 }
 
 type fileLogStorage struct {
@@ -360,3 +387,4 @@ func (fls*fileLogStorage) getSpecificLogs(logs []int) []Log {
 func (fls *fileLogStorage) nLogs() int {
 	return fls.n
 }
+

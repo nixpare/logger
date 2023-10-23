@@ -74,9 +74,9 @@ type Logger interface {
 	Close()
 }
 
-type logger struct {
+type memLogger struct {
 	out            io.Writer
-	logs           logStorage
+	storage        *memLogStorage
 	tags           []string
 	disableExtras  bool
 	counter        int
@@ -91,22 +91,39 @@ type logger struct {
 // change
 var DefaultLogger Logger
 
-var MaxLogsPerSec = 1000
+var (
+	// LogFileTimeFormat is the format that is used to create
+	// the log files for the HugeLogger. It must not be changed
+	// after the creation of the first HugeLogger, otherwise logs
+	// with the old format will be lost
+	LogFileTimeFormat = "06.01.02-15.04.05"
+	// LogChunkSize determines both the numbers of logs kept in memory
+	// and the number of logs saved in each file. It must not be changed
+	// after the creation of the first HugeLogger
+	LogChunkSize = 1000
+	// LogFileExtension can be used to change the file extenstion of the
+	// log files
+	LogFileExtension = "data"
+	
+	MaxLogsPerSec = 1000
+)
 
-var defaultLoggerCreation = true
-
-func newLogger(out io.Writer, tags []string, fls logStorage) *logger {
-	l := &logger{
-		out: out,
-		logs: fls,
-		tags: tags,
-		stopC: make(chan struct{}),
+func newMemLogger(out io.Writer, tags []string) *memLogger {
+	return &memLogger{
+		out:     out,
+		storage: &memLogStorage{
+			v:   make([]Log, 0),
+			rwm: new(sync.RWMutex),
+		},
+		tags:    tags,
+		stopC:   make(chan struct{}),
 	}
+}
 
-	if defaultLoggerCreation {
-		defaultLoggerCreation = false
-		return l
-	}
+// NewLogger creates a standard logger, which saves the logs only in
+// memory. Read the Logger interface docs for other informations
+func NewLogger(out io.Writer, tags ...string) Logger {
+	l := newMemLogger(out, tags)
 
 	go func() {
 		ticker := time.NewTicker(time.Second)
@@ -133,13 +150,14 @@ func newLogger(out io.Writer, tags []string, fls logStorage) *logger {
 	return l
 }
 
-// NewLogger creates a standard logger, which saves the logs only in
-// memory. Read the Logger interface docs for other informations
-func NewLogger(out io.Writer, tags ...string) Logger {
-	return newLogger(out, tags, &memLogStorage{
-		v:   make([]Log, 0),
-		rwm: new(sync.RWMutex),
-	})
+type hugeLogger struct {
+	out            io.Writer
+	storage        *fileLogStorage
+	tags           []string
+	disableExtras  bool
+	counter        int
+	heavyLoad      bool
+	stopC          chan struct{}
 }
 
 // NewLogger creates a logger that keeps in memory the most recent logs and
@@ -152,23 +170,12 @@ func NewHugeLogger(out io.Writer, dir string, prefix string, tags ...string) (Lo
 		return nil, err
 	}
 
-	return newLogger(out, tags, fls), nil
-}
-
-func (l *logger) newLog(log Log, writeOutput bool) int {
-	log.addTags(l.tags...)
-	p := l.logs.addLog(log)
-
-	if l.out == nil || !writeOutput {
-		return p
-	}
-
-	if !l.heavyLoad {
-		logToOut(l, log, l.disableExtras)
-		return p
-	}
-
-	return p
+	return &hugeLogger{
+		out:     out,
+		storage: fls,
+		tags:    tags,
+		stopC:   make(chan struct{}),
+	}, nil
 }
 
 func logToOut(l Logger, log Log, disableExtras bool) {
@@ -192,12 +199,10 @@ func logToOut(l Logger, log Log, disableExtras bool) {
 	}
 }
 
-func (l *logger) AddLog(level LogLevel, message string, extra string, writeOutput bool) {
-	l.counter ++
-
-	l.newLog(Log{
-		l: newLog(level, message, extra),
-	}, writeOutput)
+func write(l Logger, p []byte) (n int, err error) {
+	message := string(p)
+	l.Print(LOG_LEVEL_BLANK, message)
+	return len(message), nil
 }
 
 func print(l Logger, level LogLevel, a ...any) {
@@ -218,18 +223,10 @@ func print(l Logger, level LogLevel, a ...any) {
 	l.AddLog(level, message, extra, true)
 }
 
-func (l *logger) Print(level LogLevel, a ...any) {
-	print(l, level, a...)
-}
-
 // Print is a shorthand for logger.DefaultLogger.Print, see Logger interface
 // method description for any information
 func Print(level LogLevel, a ...any) {
 	DefaultLogger.Print(level, a...)
-}
-
-func (l *logger) Printf(level LogLevel, format string, a ...any) {
-	l.Print(level, fmt.Sprintf(format, a...))
 }
 
 // Printf is a shorthand for logger.DefaultLogger.Printf, see Logger interface
@@ -238,71 +235,8 @@ func Printf(level LogLevel, format string, a ...any) {
 	DefaultLogger.Printf(level, format, a...)
 }
 
-func (l *logger) Debug(a ...any) {
-	l.Print(LOG_LEVEL_DEBUG, a...)
-}
-
 // Debug is a shorthand for logger.DefaultLogger.Debug, see Logger interface
 // method description for any information
 func Debug(a ...any) {
 	DefaultLogger.Debug(a...)
-}
-
-func (l *logger) NLogs() int {
-	return l.logs.nLogs()
-}
-
-func (l *logger) Out() io.Writer {
-	return l.out
-}
-
-func (l *logger) GetLog(index int) Log {
-	return l.logs.getLog(index)
-}
-
-func (l *logger) GetLastNLogs(n int) []Log {
-	tot := l.logs.nLogs()
-	if n > tot {
-		n = tot
-	}
-	return l.GetLogs(tot-n, tot)
-}
-
-func (l *logger) GetLogs(start, end int) []Log {
-	return l.logs.getLogs(start, end)
-}
-
-func (l *logger) GetSpecificLogs(logs []int) []Log {
-	return l.logs.getSpecificLogs(logs)
-}
-
-func write(l Logger, p []byte) (n int, err error) {
-	message := string(p)
-	l.Print(LOG_LEVEL_BLANK, message)
-	return len(message), nil
-}
-
-func (l *logger) Write(p []byte) (n int, err error) {
-	return write(l, p)
-}
-
-func (l *logger) EnableExtras() {
-	l.disableExtras = false
-}
-
-func (l *logger) DisableExtras() {
-	l.disableExtras = true
-}
-
-func (l *logger) Clone(out io.Writer, tags ...string) Logger {
-	return &cloneLogger{
-		out:        out,
-		tags:       tags,
-		disableExtras: l.disableExtras,
-		parent:     l,
-	}
-}
-
-func (l *logger) Close() {
-	l.stopC <- struct{}{}
 }

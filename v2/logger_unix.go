@@ -6,5 +6,5 @@ import (
 )
 
 func init() {
-	DefaultLogger = NewLogger(os.Stdout)
+	DefaultLogger = newMemLogger(os.Stdout, nil)
 }

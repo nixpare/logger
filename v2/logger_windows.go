@@ -10,5 +10,5 @@ func init() {
 	if _, err := os.Stdout.Stat(); err == nil {
 		out = os.Stdout
 	}
-	DefaultLogger = NewLogger(out)
+	DefaultLogger = newMemLogger(out, nil)
 }
