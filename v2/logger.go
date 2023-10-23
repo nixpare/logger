@@ -106,12 +106,13 @@ var (
 // memory. Read the Logger interface docs for other informations
 func NewLogger(out io.Writer, tags ...string) Logger {
 	return &memLogger{
-		out:     out,
-		v: make([]Log, 0),
-		rwm: new(sync.RWMutex),
-		tags:    tags,
-		writingM: new(sync.Mutex),
-		stopBc:   comms.NewBroadcaster[struct{}](),
+		out:       out,
+		v:         make([]Log, 0),
+		rwm:       new(sync.RWMutex),
+		tags:      tags,
+		lastWrote: -1,
+		writingM:  new(sync.Mutex),
+		stopBc:    comms.NewBroadcaster[struct{}](),
 	}
 }
 
@@ -126,11 +127,12 @@ func NewHugeLogger(out io.Writer, dir string, prefix string, tags ...string) (Lo
 	}
 
 	l := &hugeLogger{
-		out:      out,
-		fls:      fls,
-		tags:     tags,
-		writingM: new(sync.Mutex),
-		stopBc:   comms.NewBroadcaster[struct{}](),
+		out:       out,
+		fls:       fls,
+		tags:      tags,
+		lastWrote: -1,
+		writingM:  new(sync.Mutex),
+		stopBc:    comms.NewBroadcaster[struct{}](),
 	}
 
 	return l, nil

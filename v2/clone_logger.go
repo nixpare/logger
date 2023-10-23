@@ -37,6 +37,7 @@ func newCloneLogger(parent Logger, out io.Writer, tags []string, extrasDisabled 
 		tags:           tags,
 		extrasDisabled: extrasDisabled,
 		parentOut:      parentOut,
+		lastWrote:      -1,
 		writingM:       new(sync.Mutex),
 		stopBc:         comms.NewBroadcaster[struct{}](),
 	}
