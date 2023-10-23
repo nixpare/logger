@@ -11,21 +11,21 @@ import (
 
 type memLogger struct {
 	out            io.Writer
-	storage        *memLogStorage
+	v              []Log
+	rwm *sync.RWMutex
 	tags           []string
 	disableExtras  bool
 	counter        int
 	heavyLoad      bool
+	lastWrote      int
 	stopBc         *comms.Broadcaster[struct{}]
 }
 
 func newMemLogger(out io.Writer, tags []string) *memLogger {
 	return &memLogger{
 		out:     out,
-		storage: &memLogStorage{
-			v:   make([]Log, 0),
-			rwm: new(sync.RWMutex),
-		},
+		v: make([]Log, 0),
+		rwm: new(sync.RWMutex),
 		tags:    tags,
 		stopBc:   comms.NewBroadcaster[struct{}](),
 	}
@@ -33,13 +33,18 @@ func newMemLogger(out io.Writer, tags []string) *memLogger {
 
 func (l *memLogger) newLog(log Log, writeOutput bool) int {
 	log.addTags(l.tags...)
-	p := l.storage.addLog(log)
+
+	l.rwm.Lock()
+	l.v = append(l.v, log)
+	p := len(l.v)-1
+	l.rwm.Unlock()
 
 	if l.out == nil || !writeOutput {
 		return p
 	}
 
 	if !l.heavyLoad {
+		l.lastWrote = p
 		logToOut(l, log, l.disableExtras)
 		return p
 	}
@@ -68,7 +73,7 @@ func (l *memLogger) Debug(a ...any) {
 }
 
 func (l *memLogger) NLogs() int {
-	return l.storage.nLogs()
+	return len(l.v)
 }
 
 func (l *memLogger) Out() io.Writer {
@@ -76,11 +81,13 @@ func (l *memLogger) Out() io.Writer {
 }
 
 func (l *memLogger) GetLog(index int) Log {
-	return l.storage.getLog(index)
+	l.rwm.RLock()
+	defer l.rwm.RUnlock()
+	return l.v[index]
 }
 
 func (l *memLogger) GetLastNLogs(n int) []Log {
-	tot := l.storage.nLogs()
+	tot := l.NLogs()
 	if n > tot {
 		n = tot
 	}
@@ -88,11 +95,20 @@ func (l *memLogger) GetLastNLogs(n int) []Log {
 }
 
 func (l *memLogger) GetLogs(start, end int) []Log {
-	return l.storage.getLogs(start, end)
+	l.rwm.RLock()
+	defer l.rwm.RUnlock()
+	return l.v[start:end]
 }
 
 func (l *memLogger) GetSpecificLogs(logs []int) []Log {
-	return l.storage.getSpecificLogs(logs)
+	l.rwm.RLock()
+	defer l.rwm.RUnlock()
+
+	res := make([]Log, 0, len(logs))
+	for _, p := range logs {
+		res = append(res, l.v[p])
+	}
+	return res
 }
 
 func (l *memLogger) Write(p []byte) (n int, err error) {
@@ -149,44 +165,4 @@ func (l *memLogger) checkHeavyLoad() {
 
 func (l *memLogger) Close() {
 	l.stopBc.SendAndWait(struct{}{})
-}
-
-type memLogStorage struct {
-	v []Log
-	rwm *sync.RWMutex
-}
-
-func (s *memLogStorage) addLog(l Log) int {
-	s.rwm.Lock()
-	defer s.rwm.Unlock()
-
-	s.v = append(s.v, l)
-	return len(s.v)-1
-}
-
-func (s memLogStorage) getLog(index int) Log {
-	s.rwm.RLock()
-	defer s.rwm.RUnlock()
-	return s.v[index]
-}
-
-func (s memLogStorage) getLogs(start, end int) []Log {
-	s.rwm.RLock()
-	defer s.rwm.RUnlock()
-	return s.v[start:end]
-}
-
-func (s memLogStorage) getSpecificLogs(logs []int) []Log {
-	s.rwm.RLock()
-	defer s.rwm.RUnlock()
-
-	res := make([]Log, 0, len(logs))
-	for _, p := range logs {
-		res = append(res, s.v[p])
-	}
-	return res
-}
-
-func (s memLogStorage) nLogs() int {
-	return len(s.v)
 }
