@@ -12,6 +12,30 @@ import (
 	"time"
 )
 
+type hugeLogger struct {
+	out            io.Writer
+	storage        *fileLogStorage
+	tags           []string
+	disableExtras  bool
+}
+
+// NewLogger creates a logger that keeps in memory the most recent logs and
+// saves everything in files divided in clusters. The dir parameter tells the
+// logger in which directory to save the logs' files. The prefix, instead, tells
+// the logger how to name the files. Read the Logger interface docs for other informations
+func NewHugeLogger(out io.Writer, dir string, prefix string, tags ...string) (Logger, error) {
+	fls, err := initFileLogStorage(dir, prefix)
+	if err != nil {
+		return nil, err
+	}
+
+	return &hugeLogger{
+		out:     out,
+		storage: fls,
+		tags:    tags,
+	}, nil
+}
+
 func (l *hugeLogger) newLog(log Log, writeOutput bool) int {
 	log.addTags(l.tags...)
 	p := l.storage.addLog(log)
@@ -20,17 +44,11 @@ func (l *hugeLogger) newLog(log Log, writeOutput bool) int {
 		return p
 	}
 
-	if !l.heavyLoad {
-		logToOut(l, log, l.disableExtras)
-		return p
-	}
-
+	logToOut(l, log, l.disableExtras)
 	return p
 }
 
 func (l *hugeLogger) AddLog(level LogLevel, message string, extra string, writeOutput bool) {
-	l.counter++
-
 	l.newLog(Log{
 		l: newLog(level, message, extra),
 	}, writeOutput)
@@ -98,7 +116,7 @@ func (l *hugeLogger) Clone(out io.Writer, tags ...string) Logger {
 }
 
 func (l *hugeLogger) Close() {
-	l.stopC <- struct{}{}
+	panic("To be implemented")
 }
 
 type fileLogStorage struct {

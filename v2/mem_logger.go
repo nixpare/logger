@@ -4,7 +4,32 @@ import (
 	"fmt"
 	"io"
 	"sync"
+	"time"
+
+	"github.com/nixpare/comms"
 )
+
+type memLogger struct {
+	out            io.Writer
+	storage        *memLogStorage
+	tags           []string
+	disableExtras  bool
+	counter        int
+	heavyLoad      bool
+	stopBc         *comms.Broadcaster[struct{}]
+}
+
+func newMemLogger(out io.Writer, tags []string) *memLogger {
+	return &memLogger{
+		out:     out,
+		storage: &memLogStorage{
+			v:   make([]Log, 0),
+			rwm: new(sync.RWMutex),
+		},
+		tags:    tags,
+		stopBc:   comms.NewBroadcaster[struct{}](),
+	}
+}
 
 func (l *memLogger) newLog(log Log, writeOutput bool) int {
 	log.addTags(l.tags...)
@@ -91,8 +116,39 @@ func (l *memLogger) Clone(out io.Writer, tags ...string) Logger {
 	}
 }
 
+func (l *memLogger) checkHeavyLoad() {
+	ticker := time.NewTicker(time.Second)
+	var exitLoop bool
+	
+	stopC := make(chan struct{})
+	defer close(stopC)
+
+	var stopMsg comms.BroadcastMessage[struct{}]
+	go func() {
+		stopMsg = l.stopBc.Listen()
+		stopC <- struct{}{}
+	}()
+	
+	for !exitLoop {
+		select {
+		case <- ticker.C:
+			if l.counter > MaxLogsPerSec {
+				l.heavyLoad = true
+			} else {
+				l.heavyLoad = false
+			}
+			l.counter = 0
+		case <- stopC:
+			ticker.Stop()
+			exitLoop = true
+		}
+	}
+
+	stopMsg.Report()
+}
+
 func (l *memLogger) Close() {
-	l.stopC <- struct{}{}
+	l.stopBc.SendAndWait(struct{}{})
 }
 
 type memLogStorage struct {

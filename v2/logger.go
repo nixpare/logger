@@ -5,8 +5,6 @@ import (
 	"io"
 	"os"
 	"strings"
-	"sync"
-	"time"
 )
 
 // Logger handles the logging. There are three types of Logger, depending on
@@ -74,16 +72,6 @@ type Logger interface {
 	Close()
 }
 
-type memLogger struct {
-	out            io.Writer
-	storage        *memLogStorage
-	tags           []string
-	disableExtras  bool
-	counter        int
-	heavyLoad      bool
-	stopC          chan struct{}
-}
-
 // DefaultLogger is the Logger used by the function in this package
 // (like logger.Print, logger.Debug, ecc) and is initialized as a
 // standard logger (logs are saved only in memory). Can be changed
@@ -108,74 +96,13 @@ var (
 	MaxLogsPerSec = 1000
 )
 
-func newMemLogger(out io.Writer, tags []string) *memLogger {
-	return &memLogger{
-		out:     out,
-		storage: &memLogStorage{
-			v:   make([]Log, 0),
-			rwm: new(sync.RWMutex),
-		},
-		tags:    tags,
-		stopC:   make(chan struct{}),
-	}
-}
-
 // NewLogger creates a standard logger, which saves the logs only in
 // memory. Read the Logger interface docs for other informations
 func NewLogger(out io.Writer, tags ...string) Logger {
 	l := newMemLogger(out, tags)
-
-	go func() {
-		ticker := time.NewTicker(time.Second)
-		var exitLoop bool
-		
-		for !exitLoop {
-			select {
-			case <- ticker.C:
-				if l.counter > MaxLogsPerSec {
-					l.heavyLoad = true
-				} else {
-					l.heavyLoad = false
-				}
-				l.counter = 0
-			case <- l.stopC:
-				ticker.Stop()
-				exitLoop = true
-			}
-		}
-
-		close(l.stopC)
-	}()
+	go l.checkHeavyLoad()
 
 	return l
-}
-
-type hugeLogger struct {
-	out            io.Writer
-	storage        *fileLogStorage
-	tags           []string
-	disableExtras  bool
-	counter        int
-	heavyLoad      bool
-	stopC          chan struct{}
-}
-
-// NewLogger creates a logger that keeps in memory the most recent logs and
-// saves everything in files divided in clusters. The dir parameter tells the
-// logger in which directory to save the logs' files. The prefix, instead, tells
-// the logger how to name the files. Read the Logger interface docs for other informations
-func NewHugeLogger(out io.Writer, dir string, prefix string, tags ...string) (Logger, error) {
-	fls, err := initFileLogStorage(dir, prefix)
-	if err != nil {
-		return nil, err
-	}
-
-	return &hugeLogger{
-		out:     out,
-		storage: fls,
-		tags:    tags,
-		stopC:   make(chan struct{}),
-	}, nil
 }
 
 func logToOut(l Logger, log Log, disableExtras bool) {
