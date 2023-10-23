@@ -16,8 +16,9 @@ type hugeLogger struct {
 	extrasDisabled bool
 	counter        int
 	heavyLoad      bool
-	nextWrite      int
-	rwm            *sync.Mutex
+	lastWrote      int
+	rwm            *sync.RWMutex
+	outM           *sync.Mutex   // outM handles access to out
 	stopBc         *comms.Broadcaster[struct{}]
 }
 
@@ -29,16 +30,13 @@ func (l *hugeLogger) newLog(log Log, writeOutput bool) int {
 	l.fls.addLog(log)
 	p := l.fls.n - 1
 
-	if l.out == nil || !writeOutput {
-		if l.nextWrite == p {
-			l.nextWrite++
+	if !l.heavyLoad && l.lastWrote == p-1 {
+		l.lastWrote = p
+		if l.out != nil && writeOutput {
+			l.outM.Lock()
+			logToOut(l, log, l.extrasDisabled)
+			l.outM.Unlock()
 		}
-		return p
-	}
-
-	if !l.heavyLoad && l.nextWrite == p {
-		l.nextWrite++
-		logToOut(l, log, l.extrasDisabled)
 	}
 
 	return p
@@ -65,7 +63,7 @@ func (l *hugeLogger) Debug(a ...any) {
 }
 
 func (l *hugeLogger) NLogs() int {
-	return l.fls.nLogs()
+	return l.fls.n
 }
 
 func (l *hugeLogger) Out() io.Writer {
@@ -73,11 +71,14 @@ func (l *hugeLogger) Out() io.Writer {
 }
 
 func (l *hugeLogger) GetLog(index int) Log {
+	l.rwm.RLock()
+	defer l.rwm.RUnlock()
+
 	return l.fls.getLog(index)
 }
 
 func (l *hugeLogger) GetLastNLogs(n int) []Log {
-	tot := l.fls.nLogs()
+	tot := l.NLogs()
 	if n > tot {
 		n = tot
 	}
@@ -85,10 +86,16 @@ func (l *hugeLogger) GetLastNLogs(n int) []Log {
 }
 
 func (l *hugeLogger) GetLogs(start, end int) []Log {
+	l.rwm.RLock()
+	defer l.rwm.RUnlock()
+
 	return l.fls.getLogs(start, end)
 }
 
 func (l *hugeLogger) GetSpecificLogs(logs []int) []Log {
+	l.rwm.RLock()
+	defer l.rwm.RUnlock()
+
 	return l.fls.getSpecificLogs(logs)
 }
 
@@ -121,29 +128,20 @@ func (l *hugeLogger) checkHeavyLoad() {
 		stopC <- struct{}{}
 	}()
 
-	var alignInProgress bool
-
 	for !exitLoop {
 		select {
 		case <-ticker.C:
 			if l.counter > MaxLogsPerSec {
 				l.heavyLoad = true
 			} else {
-				if !alignInProgress {
-					go func() {
-						alignInProgress = true
-						l.alignOutput()
-						alignInProgress = false
-					}()
-				}
-
 				l.heavyLoad = false
+				l.alignOutput()
 			}
 			l.counter = 0
 		case <-stopC:
+			exitLoop = true
 			ticker.Stop()
 			l.alignOutput()
-			exitLoop = true
 		}
 	}
 
@@ -151,7 +149,9 @@ func (l *hugeLogger) checkHeavyLoad() {
 }
 
 func (l *hugeLogger) EnableHeavyLoadDetection() {
-	go l.checkHeavyLoad()
+	if l.out != nil {
+		go l.checkHeavyLoad()
+	}
 }
 
 func (l *hugeLogger) Close() {
@@ -159,15 +159,18 @@ func (l *hugeLogger) Close() {
 }
 
 func (l *hugeLogger) alignOutput() {
-	if l.out == nil || l.fls.n == 0 {
+	l.outM.Lock()
+	defer l.outM.Unlock()
+
+	if l.NLogs() == 0 {
 		return
 	}
 
-	l.rwm.Lock()
-	defer l.rwm.Unlock()
-
 	for {
-		logs := l.fls.getLogs(l.nextWrite, l.fls.n)
+		l.rwm.RLock()
+		logs := l.fls.getLogs(l.lastWrote+1, l.NLogs())
+		l.rwm.RUnlock()
+
 		if len(logs) == 0 {
 			break
 		}
@@ -175,6 +178,9 @@ func (l *hugeLogger) alignOutput() {
 		for _, log := range logs {
 			logToOut(l, log, l.extrasDisabled)
 		}
-		l.nextWrite += len(logs)
+
+		l.rwm.Lock()
+		l.lastWrote += len(logs)
+		l.rwm.Unlock()
 	}
 }

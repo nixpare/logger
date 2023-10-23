@@ -277,7 +277,3 @@ func (fls *hugeLogStorage) getSpecificLogs(logs []int) []Log {
 
 	return res
 }
-
-func (fls *hugeLogStorage) nLogs() int {
-	return fls.n
-}

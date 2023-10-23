@@ -127,11 +127,13 @@ func NewHugeLogger(out io.Writer, dir string, prefix string, tags ...string) (Lo
 	}
 
 	l := &hugeLogger{
-		out:    out,
-		fls:    fls,
-		tags:   tags,
-		rwm:    new(sync.Mutex),
-		stopBc: comms.NewBroadcaster[struct{}](),
+		out:       out,
+		fls:       fls,
+		tags:      tags,
+		lastWrote: -1,
+		rwm:       new(sync.RWMutex),
+		outM:      new(sync.Mutex),
+		stopBc:    comms.NewBroadcaster[struct{}](),
 	}
 
 	return l, nil

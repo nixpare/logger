@@ -73,6 +73,7 @@ func (l *memLogger) Out() io.Writer {
 func (l *memLogger) GetLog(index int) Log {
 	l.rwm.RLock()
 	defer l.rwm.RUnlock()
+
 	return l.v[index]
 }
 
@@ -87,6 +88,7 @@ func (l *memLogger) GetLastNLogs(n int) []Log {
 func (l *memLogger) GetLogs(start, end int) []Log {
 	l.rwm.RLock()
 	defer l.rwm.RUnlock()
+
 	return l.v[start:end]
 }
 
@@ -164,7 +166,7 @@ func (l *memLogger) alignOutput() {
 	l.outM.Lock()
 	defer l.outM.Unlock()
 
-	if len(l.v) == 0 {
+	if l.NLogs() == 0 {
 		return
 	}
 
