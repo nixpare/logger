@@ -12,12 +12,13 @@ import (
 type memLogger struct {
 	out            io.Writer
 	v              []Log
-	rwm *sync.RWMutex
+	rwm            *sync.RWMutex
 	tags           []string
 	disableExtras  bool
 	counter        int
 	heavyLoad      bool
 	lastWrote      int
+	writingM       *sync.Mutex
 	stopBc         *comms.Broadcaster[struct{}]
 }
 
@@ -27,6 +28,7 @@ func newMemLogger(out io.Writer, tags []string) *memLogger {
 		v: make([]Log, 0),
 		rwm: new(sync.RWMutex),
 		tags:    tags,
+		writingM: new(sync.Mutex),
 		stopBc:   comms.NewBroadcaster[struct{}](),
 	}
 }
@@ -43,10 +45,12 @@ func (l *memLogger) newLog(log Log, writeOutput bool) int {
 		return p
 	}
 
-	if !l.heavyLoad {
+	l.writingM.Lock()
+	defer l.writingM.Unlock()
+
+	if !l.heavyLoad && l.lastWrote == p-1 {
 		l.lastWrote = p
 		logToOut(l, log, l.disableExtras)
-		return p
 	}
 
 	return p
@@ -145,17 +149,28 @@ func (l *memLogger) checkHeavyLoad() {
 		stopC <- struct{}{}
 	}()
 	
+	var alignInProgress bool
+
 	for !exitLoop {
 		select {
 		case <- ticker.C:
 			if l.counter > MaxLogsPerSec {
 				l.heavyLoad = true
 			} else {
+				if !alignInProgress {
+					go func() {
+						alignInProgress = true
+						l.alignOutput()
+						alignInProgress = false
+					}()
+				}
+				
 				l.heavyLoad = false
 			}
 			l.counter = 0
 		case <- stopC:
 			ticker.Stop()
+			l.alignOutput()
 			exitLoop = true
 		}
 	}
@@ -165,4 +180,25 @@ func (l *memLogger) checkHeavyLoad() {
 
 func (l *memLogger) Close() {
 	l.stopBc.SendAndWait(struct{}{})
+}
+
+func (l *memLogger) alignOutput() {
+	if len(l.v) == 0 {
+		return
+	}
+
+	l.writingM.Lock()
+	defer l.writingM.Unlock()
+
+	for {
+		logs := l.v[l.lastWrote+1:]
+		if len(logs) == 0 {
+			break
+		}
+
+		for _, log := range logs {
+			logToOut(l, log, l.disableExtras)
+		}
+		l.lastWrote += len(logs)
+	}
 }
