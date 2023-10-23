@@ -10,16 +10,16 @@ import (
 )
 
 type memLogger struct {
-	out            io.Writer
-	v              []Log
-	rwm            *sync.RWMutex
-	tags           []string
-	disableExtras  bool
-	counter        int
-	heavyLoad      bool
-	lastWrote      int
-	writingM       *sync.Mutex
-	stopBc         *comms.Broadcaster[struct{}]
+	out             io.Writer
+	v               []Log
+	rwm             *sync.RWMutex
+	tags            []string
+	extrasDisabled  bool
+	counter         int
+	heavyLoad       bool
+	lastWrote       int
+	writingM        *sync.Mutex
+	stopBc          *comms.Broadcaster[struct{}]
 }
 
 func newMemLogger(out io.Writer, tags []string) *memLogger {
@@ -38,7 +38,7 @@ func (l *memLogger) newLog(log Log, writeOutput bool) int {
 
 	l.rwm.Lock()
 	l.v = append(l.v, log)
-	p := len(l.v)-1
+	p := len(l.v) - 1
 	l.rwm.Unlock()
 
 	if l.out == nil || !writeOutput {
@@ -50,7 +50,7 @@ func (l *memLogger) newLog(log Log, writeOutput bool) int {
 
 	if !l.heavyLoad && l.lastWrote == p-1 {
 		l.lastWrote = p
-		logToOut(l, log, l.disableExtras)
+		logToOut(l, log, l.extrasDisabled)
 	}
 
 	return p
@@ -120,20 +120,15 @@ func (l *memLogger) Write(p []byte) (n int, err error) {
 }
 
 func (l *memLogger) EnableExtras() {
-	l.disableExtras = false
+	l.extrasDisabled = false
 }
 
 func (l *memLogger) DisableExtras() {
-	l.disableExtras = true
+	l.extrasDisabled = true
 }
 
-func (l *memLogger) Clone(out io.Writer, tags ...string) Logger {
-	return &cloneLogger{
-		out:           out,
-		tags:          tags,
-		disableExtras: l.disableExtras,
-		parent:        l,
-	}
+func (l *memLogger) Clone(out io.Writer, parentOut bool, tags ...string) Logger {
+	return newCloneLogger(l, out, tags, l.extrasDisabled, parentOut)
 }
 
 func (l *memLogger) checkHeavyLoad() {
@@ -197,7 +192,7 @@ func (l *memLogger) alignOutput() {
 		}
 
 		for _, log := range logs {
-			logToOut(l, log, l.disableExtras)
+			logToOut(l, log, l.extrasDisabled)
 		}
 		l.lastWrote += len(logs)
 	}

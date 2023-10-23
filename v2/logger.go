@@ -26,10 +26,12 @@ type Logger interface {
 	// the Logger
 	AddLog(level LogLevel, message string, extra string, writeOutput bool)
 	// Clone creates a pseudo-Logger that leans on the calling Logger, called the parent logger.
-	// You can specify dditional tags that will be inherited by every log created with
+	// You can specify additional tags that will be inherited by every log created with
 	// this logger, in addition to every tags owned by the parent logger. If you specify an out
-	// io.Writer, every log will be also writter to this destination
-	Clone(out io.Writer, tags ...string) Logger
+	// io.Writer, every log will be also writter to this destination, and if you set parentOut to
+	// true every log will be also written by the parent on its own output, possibly creating
+	// multiple logs lines if the output is the same
+	Clone(out io.Writer, parentOut bool, tags ...string) Logger
 	// Debug is a shorthand for Print(logger.LOG_LEVEL_DEBUG, a...), can be handy while debugging
 	// some code. See interface method Print for more information
 	Debug(a ...any)
@@ -100,7 +102,9 @@ var (
 // memory. Read the Logger interface docs for other informations
 func NewLogger(out io.Writer, tags ...string) Logger {
 	l := newMemLogger(out, tags)
-	go l.checkHeavyLoad()
+	if out != nil {
+		go l.checkHeavyLoad()
+	}
 
 	return l
 }

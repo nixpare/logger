@@ -13,10 +13,10 @@ import (
 )
 
 type hugeLogger struct {
-	out            io.Writer
-	storage        *fileLogStorage
-	tags           []string
-	disableExtras  bool
+	out             io.Writer
+	storage         *fileLogStorage
+	tags            []string
+	extrasDisabled  bool
 }
 
 // NewLogger creates a logger that keeps in memory the most recent logs and
@@ -44,7 +44,7 @@ func (l *hugeLogger) newLog(log Log, writeOutput bool) int {
 		return p
 	}
 
-	logToOut(l, log, l.disableExtras)
+	logToOut(l, log, l.extrasDisabled)
 	return p
 }
 
@@ -99,20 +99,15 @@ func (l *hugeLogger) Write(p []byte) (n int, err error) {
 }
 
 func (l *hugeLogger) EnableExtras() {
-	l.disableExtras = false
+	l.extrasDisabled = false
 }
 
 func (l *hugeLogger) DisableExtras() {
-	l.disableExtras = true
+	l.extrasDisabled = true
 }
 
-func (l *hugeLogger) Clone(out io.Writer, tags ...string) Logger {
-	return &cloneLogger{
-		out:           out,
-		tags:          tags,
-		disableExtras: l.disableExtras,
-		parent:        l,
-	}
+func (l *hugeLogger) Clone(out io.Writer, parentOut bool, tags ...string) Logger {
+	return newCloneLogger(l, out, tags, l.extrasDisabled, parentOut)
 }
 
 func (l *hugeLogger) Close() {
