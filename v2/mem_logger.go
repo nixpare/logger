@@ -22,17 +22,6 @@ type memLogger struct {
 	stopBc          *comms.Broadcaster[struct{}]
 }
 
-func newMemLogger(out io.Writer, tags []string) *memLogger {
-	return &memLogger{
-		out:     out,
-		v: make([]Log, 0),
-		rwm: new(sync.RWMutex),
-		tags:    tags,
-		writingM: new(sync.Mutex),
-		stopBc:   comms.NewBroadcaster[struct{}](),
-	}
-}
-
 func (l *memLogger) newLog(log Log, writeOutput bool) int {
 	log.addTags(l.tags...)
 
@@ -171,6 +160,12 @@ func (l *memLogger) checkHeavyLoad() {
 	}
 
 	stopMsg.Report()
+}
+
+func (l *memLogger) EnableHeavyLoadDetection() {
+	if l.out != nil {
+		go l.checkHeavyLoad()
+	}
 }
 
 func (l *memLogger) Close() {

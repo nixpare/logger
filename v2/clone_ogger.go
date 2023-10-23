@@ -40,10 +40,6 @@ func newCloneLogger(parent Logger, out io.Writer, tags []string, extrasDisabled 
 		writingM:       new(sync.Mutex),
 		stopBc:         comms.NewBroadcaster[struct{}](),
 	}
-
-	if out != nil {
-		go l.checkHeavyLoad()
-	}
 	
 	return l
 }
@@ -198,6 +194,12 @@ func (l *cloneLogger) checkHeavyLoad() {
 	}
 
 	stopMsg.Report()
+}
+
+func (l *cloneLogger) EnableHeavyLoadDetection() {
+	if l.out != nil {
+		go l.checkHeavyLoad()
+	}
 }
 
 func (l *cloneLogger) Close() {

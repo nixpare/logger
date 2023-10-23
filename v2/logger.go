@@ -5,6 +5,9 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync"
+
+	"github.com/nixpare/comms"
 )
 
 // Logger handles the logging. There are three types of Logger, depending on
@@ -71,6 +74,7 @@ type Logger interface {
 	// populate the extra field of the Log
 	Printf(level LogLevel, format string, a ...any)
 	Write(p []byte) (n int, err error)
+	EnableHeavyLoadDetection()
 	Close()
 }
 
@@ -101,12 +105,35 @@ var (
 // NewLogger creates a standard logger, which saves the logs only in
 // memory. Read the Logger interface docs for other informations
 func NewLogger(out io.Writer, tags ...string) Logger {
-	l := newMemLogger(out, tags)
-	if out != nil {
-		go l.checkHeavyLoad()
+	return &memLogger{
+		out:     out,
+		v: make([]Log, 0),
+		rwm: new(sync.RWMutex),
+		tags:    tags,
+		writingM: new(sync.Mutex),
+		stopBc:   comms.NewBroadcaster[struct{}](),
+	}
+}
+
+// NewLogger creates a logger that keeps in memory the most recent logs and
+// saves everything in files divided in clusters. The dir parameter tells the
+// logger in which directory to save the logs' files. The prefix, instead, tells
+// the logger how to name the files. Read the Logger interface docs for other informations
+func NewHugeLogger(out io.Writer, dir string, prefix string, tags ...string) (Logger, error) {
+	fls, err := initFileLogStorage(dir, prefix)
+	if err != nil {
+		return nil, err
 	}
 
-	return l
+	l := &hugeLogger{
+		out:      out,
+		fls:      fls,
+		tags:     tags,
+		writingM: new(sync.Mutex),
+		stopBc:   comms.NewBroadcaster[struct{}](),
+	}
+
+	return l, nil
 }
 
 func logToOut(l Logger, log Log, disableExtras bool) {

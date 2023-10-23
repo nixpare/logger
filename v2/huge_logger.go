@@ -21,28 +21,6 @@ type hugeLogger struct {
 	stopBc          *comms.Broadcaster[struct{}]
 }
 
-// NewLogger creates a logger that keeps in memory the most recent logs and
-// saves everything in files divided in clusters. The dir parameter tells the
-// logger in which directory to save the logs' files. The prefix, instead, tells
-// the logger how to name the files. Read the Logger interface docs for other informations
-func NewHugeLogger(out io.Writer, dir string, prefix string, tags ...string) (Logger, error) {
-	fls, err := initFileLogStorage(dir, prefix)
-	if err != nil {
-		return nil, err
-	}
-
-	l := &hugeLogger{
-		out:      out,
-		fls:      fls,
-		tags:     tags,
-		writingM: new(sync.Mutex),
-		stopBc:   comms.NewBroadcaster[struct{}](),
-	}
-
-	go l.checkHeavyLoad()
-	return l, nil
-}
-
 func (l *hugeLogger) newLog(log Log, writeOutput bool) int {
 	log.addTags(l.tags...)
 	p := l.fls.addLog(log)
@@ -168,12 +146,16 @@ func (l *hugeLogger) checkHeavyLoad() {
 	stopMsg.Report()
 }
 
+func (l *hugeLogger) EnableHeavyLoadDetection() {
+	go l.checkHeavyLoad()
+}
+
 func (l *hugeLogger) Close() {
 	l.stopBc.SendAndWait(struct{}{})
 }
 
 func (l *hugeLogger) alignOutput() {
-	if l.fls.n == 0 {
+	if l.out == nil || l.fls.n == 0 {
 		return
 	}
 
