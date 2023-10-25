@@ -291,16 +291,16 @@ func (hls hugeLogStorage) splitRequestSingle(logs []int) (res [][]int) {
 }
 
 func (hls *hugeLogStorage) getSpecificLogs(logs []int) []Log {
-	inter := hls.splitRequestSingle(logs)
+	intervals := hls.splitRequestSingle(logs)
 	res := make([]Log, 0, len(logs))
 
-	for _, i := range inter {
-		if i[0] >= hls.n-LogChunkSize {
-			for _, p := range i {
+	for _, interv := range intervals {
+		if interv[0] >= hls.n-LogChunkSize {
+			for _, p := range interv {
 				res = append(res, hls.getLog(p))
 			}
 		} else {
-			fNum := i[0] / LogChunkSize
+			fNum := interv[0] / LogChunkSize
 
 			f, err := os.Open(hls.fileNameGeneration(fNum))
 			if err != nil {
@@ -308,16 +308,24 @@ func (hls *hugeLogStorage) getSpecificLogs(logs []int) []Log {
 			}
 			defer f.Close()
 
-			sc := bufio.NewScanner(f)
+			var i int
 			lastRead := (fNum * LogChunkSize) - 1
 
-			for _, p := range i {
-				for j := lastRead + 1; j < p; j++ {
-					sc.Scan()
+			sc := bufio.NewScanner(f)
+			loop: for i = range interv {
+				for j := lastRead+1; j < interv[i]; j++ {
+					ok := sc.Scan()
+					if !ok {
+						break loop
+					}
 				}
 
-				sc.Scan()
-				lastRead = p
+				ok := sc.Scan()
+				if !ok {
+					break loop
+				}
+
+				lastRead = interv[i]
 
 				var l Log
 				err = json.Unmarshal(sc.Bytes(), &l)
@@ -327,6 +335,20 @@ func (hls *hugeLogStorage) getSpecificLogs(logs []int) []Log {
 
 				res = append(res, l)
 			}
+
+			hls.rwm.RLock()
+			if i < len(interv) && i > hls.lastStored {
+				b, ok := hls.buffer[fNum]
+				if !ok {
+					hls.rwm.RUnlock()
+					panic("log could not be found in both the cache and files")
+				}
+
+				for ; i < len(interv); i++ {
+					res = append(res, (*b)[i])
+				}
+			}
+			hls.rwm.RUnlock()
 		}
 	}
 
