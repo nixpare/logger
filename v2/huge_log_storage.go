@@ -344,21 +344,23 @@ func (hls *hugeLogStorage) alignStorage(empty bool) {
 		}
 
 		hls.rwm.Lock()
-		defer hls.rwm.Unlock()
 
 		chunk := hls.lastStored / LogChunkSize
 
 		b, ok := hls.buffer[chunk]
 		if !ok {
+			hls.rwm.Unlock()
 			break
 		}
 
 		if len(*b) == 0 {
+			hls.rwm.Unlock()
 			break
 		}
 
 		f, err := os.OpenFile(hls.fileNameGeneration(chunk), os.O_WRONLY | os.O_APPEND, 0)
 		if err != nil {
+			hls.rwm.Unlock()
 			panic(err)
 		}
 
@@ -370,23 +372,7 @@ func (hls *hugeLogStorage) alignStorage(empty bool) {
 		hls.lastStored += len(*b)
 		logPool.Put(b)
 		delete(hls.buffer, chunk)
+
+		hls.rwm.Unlock()
 	}
-}
-
-func Align(l Logger) {
-	hl, ok := l.(*hugeLogger)
-	if !ok {
-		return
-	}
-
-	hl.hls.alignStorage(true)
-}
-
-func SetHeavyLoad(l Logger, value bool) {
-	hl, ok := l.(*hugeLogger)
-	if !ok {
-		return
-	}
-
-	hl.hls.heavyLoad = value
 }
