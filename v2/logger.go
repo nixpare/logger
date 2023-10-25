@@ -123,14 +123,14 @@ func NewLogger(out io.Writer, tags ...string) Logger {
 // logger in which directory to save the logs' files. The prefix, instead, tells
 // the logger how to name the files. Read the Logger interface docs for other informations
 func NewHugeLogger(out io.Writer, dir string, prefix string, tags ...string) (Logger, error) {
-	fls, err := initFileLogStorage(dir, prefix)
+	hls, err := initHugeLogStorage(dir, prefix)
 	if err != nil {
 		return nil, err
 	}
 
 	l := &hugeLogger{
 		out:       out,
-		fls:       fls,
+		hls:       hls,
 		tags:      tags,
 		lastWrote: -1,
 		rwm:       new(sync.RWMutex),

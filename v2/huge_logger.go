@@ -11,14 +11,14 @@ import (
 
 type hugeLogger struct {
 	out            io.Writer
-	fls            *hugeLogStorage
+	hls            *hugeLogStorage
 	tags           []string
 	extrasDisabled bool
 	counter        int
 	heavyLoad      bool
 	lastWrote      int
 	rwm            *sync.RWMutex
-	outM           *sync.Mutex // outM handles access to out
+	outM           *sync.Mutex
 	stopBc         *comms.Broadcaster[struct{}]
 }
 
@@ -29,8 +29,8 @@ func (l *hugeLogger) newLog(log Log, writeOutput bool) int {
 	defer l.rwm.Unlock()
 
 	log.addTags(l.tags...)
-	l.fls.addLog(log)
-	p := l.fls.n - 1
+	l.hls.addLog(log)
+	p := l.hls.n - 1
 
 	if !l.heavyLoad && l.lastWrote == p-1 {
 		l.lastWrote = p
@@ -63,7 +63,7 @@ func (l *hugeLogger) Debug(a ...any) {
 }
 
 func (l *hugeLogger) NLogs() int {
-	return l.fls.n
+	return l.hls.n
 }
 
 func (l *hugeLogger) Out() io.Writer {
@@ -74,7 +74,7 @@ func (l *hugeLogger) GetLog(index int) Log {
 	l.rwm.RLock()
 	defer l.rwm.RUnlock()
 
-	return l.fls.getLog(index)
+	return l.hls.getLog(index)
 }
 
 func (l *hugeLogger) GetLastNLogs(n int) []Log {
@@ -89,14 +89,14 @@ func (l *hugeLogger) GetLogs(start, end int) []Log {
 	l.rwm.RLock()
 	defer l.rwm.RUnlock()
 
-	return l.fls.getLogs(start, end)
+	return l.hls.getLogs(start, end)
 }
 
 func (l *hugeLogger) GetSpecificLogs(logs []int) []Log {
 	l.rwm.RLock()
 	defer l.rwm.RUnlock()
 
-	return l.fls.getSpecificLogs(logs)
+	return l.hls.getSpecificLogs(logs)
 }
 
 func (l *hugeLogger) Write(p []byte) (n int, err error) {
