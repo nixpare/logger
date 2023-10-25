@@ -337,7 +337,7 @@ func (hls *hugeLogStorage) getSpecificLogs(logs []int) []Log {
 			}
 
 			hls.rwm.RLock()
-			if i < len(interv) && i > hls.lastStored {
+			if i < len(interv) && interv[i] > hls.lastStored {
 				b, ok := hls.buffer[fNum]
 				if !ok {
 					hls.rwm.RUnlock()
@@ -345,7 +345,8 @@ func (hls *hugeLogStorage) getSpecificLogs(logs []int) []Log {
 				}
 
 				for ; i < len(interv); i++ {
-					res = append(res, (*b)[i])
+					index := (interv[i] % LogChunkSize) - (LogChunkSize - len(*b))
+					res = append(res, (*b)[index])
 				}
 			}
 			hls.rwm.RUnlock()
