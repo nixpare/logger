@@ -21,6 +21,8 @@ type hugeLogStorage struct {
 	f         *os.File // f is the last log file opened for writing
 	lastStored  int
 	heavyLoad   bool
+	buffer      map[int]*[]Log
+	rwm         *sync.RWMutex
 	storeM      *sync.RWMutex
 }
 
@@ -35,6 +37,8 @@ func initHugeLogStorage(dir, prefix string) (*hugeLogStorage, error) {
 		dir:    dir,
 		prefix: fmt.Sprintf("%s-%s-", prefix, time.Now().Format(LogFileTimeFormat)),
 		lastStored: -1,
+		buffer: make(map[int]*[]Log),
+		rwm:    new(sync.RWMutex),
 		storeM: new(sync.RWMutex),
 	}
 
@@ -77,11 +81,29 @@ func (hls *hugeLogStorage) addLog(l Log) {
 			hls.f = f
 		}
 	}
-	hls.n ++
 
-	DefaultLogger.AddLog(LOG_LEVEL_INFO, "Write", "", false)
-	hls.f.Write(l.JSON())
-	hls.f.Write([]byte{'\n'})
+	hls.rwm.Lock()
+	if !hls.heavyLoad && hls.lastStored + 1 == hls.n {
+		hls.f.Write(l.JSON())
+		hls.f.Write([]byte{'\n'})
+
+		hls.lastStored ++
+		hls.rwm.Unlock()
+	} else {
+		hls.storeM.Lock()
+		hls.rwm.Unlock()
+
+		b, ok := hls.buffer[hls.chunks]
+		if !ok {
+			b = newLogBuffer()
+			hls.buffer[hls.chunks] = b
+		}
+
+		*b = append(*b, l)
+		hls.storeM.Unlock()
+	}
+
+	hls.n ++
 }
 
 func (hls *hugeLogStorage) getLog(index int) Log {
@@ -169,6 +191,9 @@ func (hls *hugeLogStorage) getLogs(start, end int) []Log {
 				res = append(res, hls.getLog(i))
 			}
 		} else {
+			hls.storeM.RLock()
+			defer hls.storeM.RUnlock()
+
 			fNum := x.start / LogChunkSize
 
 			f, err := os.Open(hls.fileNameGeneration(fNum))
@@ -188,6 +213,7 @@ func (hls *hugeLogStorage) getLogs(start, end int) []Log {
 				var l Log
 				err = json.Unmarshal(sc.Bytes(), &l)
 				if err != nil {
+					Debug(hls.buffer)
 					panic(err)
 				}
 
@@ -285,6 +311,42 @@ func (hls *hugeLogStorage) getSpecificLogs(logs []int) []Log {
 	return res
 }
 
+func (hls *hugeLogStorage) alignStorage(empty bool) {
+	hls.storeM.Lock()
+	defer hls.storeM.Unlock()
+
+	if hls.n == 0 {
+		return
+	}
+
+	for chunk, b := range hls.buffer {
+		if !empty && hls.heavyLoad {
+			break
+		}
+
+		if len(*b) == 0 {
+			break
+		}
+
+		f, err := os.OpenFile(hls.fileNameGeneration(chunk), os.O_WRONLY | os.O_APPEND, 0)
+		if err != nil {
+			panic(err)
+		}
+
+		for _, log := range *b {
+			f.Write(log.JSON())
+			f.Write([]byte{'\n'})
+		}
+
+		hls.rwm.Lock()
+		hls.lastStored += len(*b)
+		hls.rwm.Unlock()
+
+		logPool.Put(b)
+		delete(hls.buffer, chunk)
+	}
+}
+
 func Align(l Logger) {
 	hl, ok := l.(*hugeLogger)
 	if !ok {
@@ -294,37 +356,11 @@ func Align(l Logger) {
 	hl.hls.alignStorage(true)
 }
 
-func (hls *hugeLogStorage) alignStorage(empty bool) {
-	hls.storeM.Lock()
-	defer hls.storeM.Unlock()
-
-	if hls.n == 0 {
+func SetHeavyLoad(l Logger, value bool) {
+	hl, ok := l.(*hugeLogger)
+	if !ok {
 		return
 	}
 
-	interv := hls.splitRequestRange(hls.lastStored + 1, hls.n)
-
-	for _, i := range interv {
-		logs := hls.getLogs(i.start, i.end)
-
-		if !empty && hls.heavyLoad {
-			break
-		}
-
-		if len(logs) == 0 {
-			break
-		}
-
-		f, err := os.OpenFile(hls.fileNameGeneration(i.start / LogChunkSize), os.O_WRONLY | os.O_APPEND, 0)
-		if err != nil {
-			panic(err)
-		}
-
-		for _, log := range logs {
-			f.Write(log.JSON())
-			f.Write([]byte{'\n'})
-		}
-
-		hls.lastStored += len(logs)
-	}
+	hl.hls.heavyLoad = value
 }

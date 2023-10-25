@@ -133,17 +133,35 @@ func (l *hugeLogger) checkHeavyLoad() {
 		case <-ticker.C:
 			if l.counter > MaxLogsPerScan {
 				l.counter = 0
+
 				l.heavyLoad = true
+				l.hls.heavyLoad = true
 			} else {
 				l.counter = 0
+
 				l.heavyLoad = false
+				l.hls.heavyLoad = false
+
 				go l.alignOutput(false)
+				go l.hls.alignStorage(false)
 			}
 		case <-stopC:
 			exitLoop = true
 			ticker.Stop()
 
-			l.alignOutput(true)
+			wg := new(sync.WaitGroup)
+			wg.Add(2)
+			
+			go func() {
+				l.alignOutput(true)
+				wg.Done()
+			}()
+			go func() {
+				l.hls.alignStorage(true)
+				wg.Done()
+			}()
+
+			wg.Wait()
 		}
 	}
 
