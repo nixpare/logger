@@ -23,7 +23,6 @@ type hugeLogStorage struct {
 	heavyLoad   bool
 	buffer      map[int]*[]Log
 	rwm         *sync.RWMutex
-	storeM      *sync.RWMutex
 }
 
 func initHugeLogStorage(dir, prefix string) (*hugeLogStorage, error) {
@@ -39,7 +38,6 @@ func initHugeLogStorage(dir, prefix string) (*hugeLogStorage, error) {
 		lastStored: -1,
 		buffer: make(map[int]*[]Log),
 		rwm:    new(sync.RWMutex),
-		storeM: new(sync.RWMutex),
 	}
 
 	info, err := os.Stat(dir)
@@ -84,15 +82,15 @@ func (hls *hugeLogStorage) addLog(l Log) {
 
 	hls.rwm.Lock()
 	if !hls.heavyLoad && hls.lastStored + 1 == hls.n {
+		hls.rwm.Unlock()
+
 		hls.f.Write(l.JSON())
 		hls.f.Write([]byte{'\n'})
 
 		hls.lastStored ++
-		hls.rwm.Unlock()
 	} else {
-		hls.storeM.Lock()
-		hls.rwm.Unlock()
-
+		defer hls.rwm.Unlock()
+		
 		b, ok := hls.buffer[hls.chunks]
 		if !ok {
 			b = newLogBuffer()
@@ -100,7 +98,6 @@ func (hls *hugeLogStorage) addLog(l Log) {
 		}
 
 		*b = append(*b, l)
-		hls.storeM.Unlock()
 	}
 
 	hls.n ++
@@ -109,9 +106,7 @@ func (hls *hugeLogStorage) addLog(l Log) {
 func (hls *hugeLogStorage) getLog(index int) Log {
 	switch {
 	case hls.n <= LogChunkSize:
-		{
-			return hls.cache[index]
-		}
+		return hls.cache[index]
 	case index >= hls.n-LogChunkSize:
 		index = index - (hls.n - LogChunkSize) + hls.cacheHead
 		index %= LogChunkSize
@@ -119,7 +114,16 @@ func (hls *hugeLogStorage) getLog(index int) Log {
 	}
 
 	fNum := index / LogChunkSize
-	index = index % LogChunkSize
+	fIndex := index % LogChunkSize
+
+	hls.rwm.RLock()
+	if index > hls.lastStored {
+		defer hls.rwm.RUnlock()
+
+		b := *hls.buffer[fNum]
+		return b[fIndex - (LogChunkSize - len(b))]
+	}
+	hls.rwm.RUnlock()
 
 	f, err := os.Open(hls.fileNameGeneration(fNum))
 	if err != nil {
@@ -191,9 +195,6 @@ func (hls *hugeLogStorage) getLogs(start, end int) []Log {
 				res = append(res, hls.getLog(i))
 			}
 		} else {
-			hls.storeM.RLock()
-			defer hls.storeM.RUnlock()
-
 			fNum := x.start / LogChunkSize
 
 			f, err := os.Open(hls.fileNameGeneration(fNum))
@@ -204,21 +205,42 @@ func (hls *hugeLogStorage) getLogs(start, end int) []Log {
 
 			sc := bufio.NewScanner(f)
 			for i := fNum * LogChunkSize; i < x.start; i++ {
-				sc.Scan()
+				ok := sc.Scan()
+				if !ok {
+					break
+				}
 			}
 
-			for i := x.start; i < x.end; i++ {
-				sc.Scan()
+			var i int
+
+			for i = x.start; i < x.end; i++ {
+				ok := sc.Scan()
+				if !ok {
+					break
+				}
 
 				var l Log
 				err = json.Unmarshal(sc.Bytes(), &l)
 				if err != nil {
-					Debug(hls.buffer)
 					panic(err)
 				}
 
 				res = append(res, l)
 			}
+
+			hls.rwm.RLock()
+			if i < x.end && i > hls.lastStored {
+				b, ok := hls.buffer[fNum]
+				if !ok {
+					hls.rwm.RUnlock()
+					panic("log could not be found in both the cache and files")
+				}
+
+				startIndex := (i % LogChunkSize) - (LogChunkSize - len(*b))
+				endIndex := (x.start % LogChunkSize) + (x.end - x.start) - (LogChunkSize - len(*b))
+				res = append(res, (*b)[startIndex:endIndex]...)
+			}
+			hls.rwm.RUnlock()
 		}
 	}
 
@@ -312,15 +334,22 @@ func (hls *hugeLogStorage) getSpecificLogs(logs []int) []Log {
 }
 
 func (hls *hugeLogStorage) alignStorage(empty bool) {
-	hls.storeM.Lock()
-	defer hls.storeM.Unlock()
-
 	if hls.n == 0 {
 		return
 	}
 
-	for chunk, b := range hls.buffer {
+	for {
 		if !empty && hls.heavyLoad {
+			break
+		}
+
+		hls.rwm.Lock()
+		defer hls.rwm.Unlock()
+
+		chunk := hls.lastStored / LogChunkSize
+
+		b, ok := hls.buffer[chunk]
+		if !ok {
 			break
 		}
 
@@ -338,10 +367,7 @@ func (hls *hugeLogStorage) alignStorage(empty bool) {
 			f.Write([]byte{'\n'})
 		}
 
-		hls.rwm.Lock()
 		hls.lastStored += len(*b)
-		hls.rwm.Unlock()
-
 		logPool.Put(b)
 		delete(hls.buffer, chunk)
 	}

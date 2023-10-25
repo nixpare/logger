@@ -142,26 +142,17 @@ func (l *hugeLogger) checkHeavyLoad() {
 				l.heavyLoad = false
 				l.hls.heavyLoad = false
 
-				go l.alignOutput(false)
-				go l.hls.alignStorage(false)
+				go func() {
+					l.hls.alignStorage(false)
+					l.alignOutput(false)
+				}()
 			}
 		case <-stopC:
 			exitLoop = true
 			ticker.Stop()
 
-			wg := new(sync.WaitGroup)
-			wg.Add(2)
-			
-			go func() {
-				l.alignOutput(true)
-				wg.Done()
-			}()
-			go func() {
-				l.hls.alignStorage(true)
-				wg.Done()
-			}()
-
-			wg.Wait()
+			l.hls.alignStorage(true)
+			l.alignOutput(true)
 		}
 	}
 
