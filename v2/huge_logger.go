@@ -32,9 +32,12 @@ func (l *hugeLogger) newLog(log Log, writeOutput bool) int {
 	l.hls.addLog(log)
 	p := l.hls.n - 1
 
-	if !l.heavyLoad && l.lastWrote == p-1 {
+	if l.out == nil || !writeOutput {
 		l.lastWrote = p
-		if l.out != nil && writeOutput {
+	} else {
+		if !l.heavyLoad && l.lastWrote == p-1 {
+			l.lastWrote = p
+			
 			l.outM.Lock()
 			logToOut(l, log, l.extrasDisabled)
 			l.outM.Unlock()
@@ -97,6 +100,18 @@ func (l *hugeLogger) GetSpecificLogs(logs []int) []Log {
 	defer l.rwm.RUnlock()
 
 	return l.hls.getSpecificLogs(logs)
+}
+
+func (l *hugeLogger) AsStdout() io.Writer {
+	return asStdout(l)
+}
+
+func (l *hugeLogger) AsStderr() io.Writer {
+	return asStderr(l)
+}
+
+func (l *hugeLogger) FixedLogger(level LogLevel) io.Writer {
+	return fixedLogger(l, level)
 }
 
 func (l *hugeLogger) Write(p []byte) (n int, err error) {

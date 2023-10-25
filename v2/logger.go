@@ -74,6 +74,9 @@ type Logger interface {
 	// the resulting output contains a line feed, everything after that will be used to
 	// populate the extra field of the Log
 	Printf(level LogLevel, format string, a ...any)
+	AsStdout() io.Writer
+	AsStderr() io.Writer
+	FixedLogger(level LogLevel) io.Writer
 	Write(p []byte) (n int, err error)
 	EnableHeavyLoadDetection()
 	Close()
@@ -160,6 +163,18 @@ func logToOut(l Logger, log Log, disableExtras bool) {
 			fmt.Fprintln(out, log.l.String())
 		}
 	}
+}
+
+func asStdout(l Logger) io.Writer {
+	return &outLogger{ l: l }
+}
+
+func asStderr(l Logger) io.Writer {
+	return &errLogger{ l: l }
+}
+
+func fixedLogger(l Logger, level LogLevel) io.Writer {
+	return &fixLogger{ l:l, level: level }
 }
 
 func write(l Logger, p []byte) (n int, err error) {

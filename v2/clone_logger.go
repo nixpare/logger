@@ -63,9 +63,12 @@ func (l *cloneLogger) newLog(log Log, writeOutput bool) int {
 	l.v = append(l.v, p)
 	p = len(l.v) - 1
 
-	if !l.heavyLoad && l.lastWrote == p-1 {
+	if l.out == nil || !writeOutput {
 		l.lastWrote = p
-		if l.out != nil && writeOutput {
+	} else {
+		if !l.heavyLoad && l.lastWrote == p-1 {
+			l.lastWrote = p
+			
 			l.outM.Lock()
 			logToOut(l, log, l.extrasDisabled)
 			l.outM.Unlock()
@@ -147,6 +150,18 @@ func (l *cloneLogger) Printf(level LogLevel, format string, a ...any) {
 
 func (l *cloneLogger) Debug(a ...any) {
 	l.Print(LOG_LEVEL_DEBUG, a...)
+}
+
+func (l *cloneLogger) AsStdout() io.Writer {
+	return asStdout(l)
+}
+
+func (l *cloneLogger) AsStderr() io.Writer {
+	return asStderr(l)
+}
+
+func (l *cloneLogger) FixedLogger(level LogLevel) io.Writer {
+	return fixedLogger(l, level)
 }
 
 func (l *cloneLogger) Write(p []byte) (n int, err error) {

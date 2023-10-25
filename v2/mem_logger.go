@@ -32,9 +32,12 @@ func (l *memLogger) newLog(log Log, writeOutput bool) int {
 	l.v = append(l.v, log)
 	p := len(l.v) - 1
 
-	if !l.heavyLoad && l.lastWrote == p-1 {
+	if l.out == nil || !writeOutput {
 		l.lastWrote = p
-		if l.out != nil && writeOutput {
+	} else {
+		if !l.heavyLoad && l.lastWrote == p-1 {
+			l.lastWrote = p
+			
 			l.outM.Lock()
 			logToOut(l, log, l.extrasDisabled)
 			l.outM.Unlock()
@@ -101,6 +104,18 @@ func (l *memLogger) GetSpecificLogs(logs []int) []Log {
 		res = append(res, l.v[p])
 	}
 	return res
+}
+
+func (l *memLogger) AsStdout() io.Writer {
+	return asStdout(l)
+}
+
+func (l *memLogger) AsStderr() io.Writer {
+	return asStderr(l)
+}
+
+func (l *memLogger) FixedLogger(level LogLevel) io.Writer {
+	return fixedLogger(l, level)
 }
 
 func (l *memLogger) Write(p []byte) (n int, err error) {

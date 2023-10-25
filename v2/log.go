@@ -22,11 +22,13 @@ const (
 	LOG_LEVEL_WARNING
 	LOG_LEVEL_ERROR
 	LOG_LEVEL_FATAL
+	log_level_stdout
+	log_level_stderr
 )
 
 func (level LogLevel) String() string {
 	switch level {
-	case LOG_LEVEL_BLANK:
+	case LOG_LEVEL_BLANK, log_level_stdout, log_level_stderr:
 		return ""
 	case LOG_LEVEL_INFO:
 		return "   Info"
@@ -44,7 +46,14 @@ func (level LogLevel) String() string {
 }
 
 func (level LogLevel) MarshalJSON() ([]byte, error) {
-	return json.Marshal(strings.TrimSpace(strings.ToLower(level.String())))
+	switch level {
+	case log_level_stdout:
+		return json.Marshal("stdout")
+	case log_level_stderr:
+		return json.Marshal("stderr")
+	default:
+		return json.Marshal(strings.TrimSpace(strings.ToLower(level.String())))
+	}
 }
 
 func (level *LogLevel) UnmarshalJSON(b []byte) error {
@@ -66,6 +75,10 @@ func (level *LogLevel) UnmarshalJSON(b []byte) error {
 		*level = LOG_LEVEL_ERROR
 	case "fatal":
 		*level = LOG_LEVEL_FATAL
+	case "stdout":
+		*level = log_level_stdout
+	case "stderr":
+		*level = log_level_stderr
 	default:
 		*level = -1
 	}
@@ -92,6 +105,11 @@ func (l log) cleanExtra() string {
 func newLog(level LogLevel, message string, extra string) *log {
 	t := time.Now()
 
+	if level == log_level_stdout || level == log_level_stderr {
+		message = message + " " + extra
+		extra = ""
+	}
+
 	return &log{
 		id: fmt.Sprintf(
 			"%d%03d",
@@ -103,19 +121,22 @@ func newLog(level LogLevel, message string, extra string) *log {
 }
 
 func (l log) String() string {
-	if l.level == LOG_LEVEL_BLANK {
+	switch l.level {
+	case LOG_LEVEL_BLANK:
 		return fmt.Sprintf(
 			"[%v] - %s",
 			l.date.Format(TimeFormat),
 			l.cleanMessage(),
 		)
+	case log_level_stdout, log_level_stderr:
+		return l.cleanMessage()
+	default:
+		return fmt.Sprintf(
+			"[%v] - %v: %s",
+			l.date.Format(TimeFormat),
+			l.level, l.cleanMessage(),
+		)
 	}
-
-	return fmt.Sprintf(
-		"[%v] - %v: %s",
-		l.date.Format(TimeFormat),
-		l.level, l.cleanMessage(),
-	)
 }
 
 func (l log) colored() string {
@@ -127,30 +148,39 @@ func (l log) colored() string {
 		color = DARK_MAGENTA_COLOR
 	case LOG_LEVEL_WARNING:
 		color = DARK_YELLOW_COLOR
-	case LOG_LEVEL_ERROR:
+	case LOG_LEVEL_ERROR, log_level_stderr:
 		color = DARK_RED_COLOR
 	case LOG_LEVEL_FATAL:
 		color = BRIGHT_RED_COLOR
 	}
 
-	if l.level == LOG_LEVEL_BLANK {
+	switch l.level {
+	case LOG_LEVEL_BLANK:
 		return fmt.Sprintf(
-			"%s[%v]%s - %s%s",
+			"%s[%v]%s - %s",
 			BRIGHT_BLACK_COLOR, l.date.Format(TimeFormat), DEFAULT_COLOR,
-			l.message, DEFAULT_COLOR,
+			l.message,
+		)
+	case log_level_stdout:
+		return l.message
+	case log_level_stderr:
+		return fmt.Sprintf(
+			"%s%s%s",
+			DARK_RED_COLOR, l.message, DEFAULT_COLOR,
+		)
+	default:
+		return fmt.Sprintf(
+			"%s[%v]%s - %s%v%s: %s",
+			BRIGHT_BLACK_COLOR, l.date.Format(TimeFormat), DEFAULT_COLOR,
+			color, l.level, DEFAULT_COLOR,
+			l.message,
 		)
 	}
-
-	return fmt.Sprintf(
-		"%s[%v]%s - %s%v%s: %s%s",
-		BRIGHT_BLACK_COLOR, l.date.Format(TimeFormat), DEFAULT_COLOR,
-		color, l.level, DEFAULT_COLOR,
-		l.message, DEFAULT_COLOR,
-	)
 }
 
 func (l log) full() string {
 	if l.extra == "" {
+		// log_level_stdout and log_level_stderr always in this case
 		return l.String()
 	}
 
@@ -171,6 +201,7 @@ func (l log) full() string {
 
 func (l log) fullColored() string {
 	if l.extra == "" {
+		// log_level_stdout and log_level_stderr always in this case
 		return l.colored()
 	}
 
@@ -190,17 +221,17 @@ func (l log) fullColored() string {
 
 	if l.level == LOG_LEVEL_BLANK {
 		return fmt.Sprintf(
-			"%s[%v]%s - %s\n%s%s",
+			"%s[%v]%s - %s\n%s",
 			BRIGHT_BLACK_COLOR, l.date.Format(TimeFormat), DEFAULT_COLOR,
-			l.message, IndentString(l.extra, 4), DEFAULT_COLOR,
+			l.message, IndentString(l.extra, 4),
 		)
 	}
 
 	return fmt.Sprintf(
-		"%s[%v]%s - %s%v%s: %s\n%s%s",
+		"%s[%v]%s - %s%v%s: %s\n%s",
 		BRIGHT_BLACK_COLOR, l.date.Format(TimeFormat), DEFAULT_COLOR,
 		color, l.level, DEFAULT_COLOR,
-		l.message, IndentString(l.extra, 4), DEFAULT_COLOR,
+		l.message, IndentString(l.extra, 4),
 	)
 }
 
