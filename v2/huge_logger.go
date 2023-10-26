@@ -18,30 +18,32 @@ type hugeLogger struct {
 	heavyLoad      bool
 	lastWrote      int
 	rwm            *sync.RWMutex
-	outM           *sync.Mutex
+	alignM         *sync.Mutex
 	stopBc         *comms.Broadcaster[struct{}]
 }
 
 func (l *hugeLogger) newLog(log Log, writeOutput bool) int {
 	l.counter++
+	log.addTags(l.tags...)
 
 	l.rwm.Lock()
-	defer l.rwm.Unlock()
 
-	log.addTags(l.tags...)
 	l.hls.addLog(log)
 	p := l.hls.n - 1
 
 	if l.out == nil || !writeOutput {
 		l.lastWrote = p
+		l.rwm.Unlock()
+		return p
+	}
+
+	if !l.heavyLoad && l.lastWrote == p-1 {
+		l.lastWrote = p
+		l.rwm.Unlock()
+
+		logToOut(l, log, l.extrasDisabled)
 	} else {
-		if !l.heavyLoad && l.lastWrote == p-1 {
-			l.lastWrote = p
-			
-			l.outM.Lock()
-			logToOut(l, log, l.extrasDisabled)
-			l.outM.Unlock()
-		}
+		l.rwm.Unlock()
 	}
 
 	return p
@@ -143,31 +145,35 @@ func (l *hugeLogger) checkHeavyLoad() {
 		stopC <- struct{}{}
 	}()
 
+	var doingPartialAlign bool
+
 	for !exitLoop {
 		select {
 		case <-ticker.C:
 			if l.counter > MaxLogsPerScan {
-				l.counter = 0
-
 				l.heavyLoad = true
 				l.hls.heavyLoad = true
 			} else {
-				l.counter = 0
-
 				l.heavyLoad = false
 				l.hls.heavyLoad = false
 
-				go func() {
-					l.hls.alignStorage(false)
-					l.alignOutput(false)
-				}()
+				if !doingPartialAlign {
+					doingPartialAlign = true
+					go func() {
+						l.alignOutput(false)
+						l.hls.alignStorage(false)
+						doingPartialAlign = false
+					}()
+				}
 			}
-		case <-stopC:
-			exitLoop = true
-			ticker.Stop()
 
-			l.hls.alignStorage(true)
+			l.counter = 0
+		case <-stopC:
+			ticker.Stop()
+			exitLoop = true
+
 			l.alignOutput(true)
+			l.hls.alignStorage(true)
 		}
 	}
 
@@ -185,8 +191,8 @@ func (l *hugeLogger) Close() {
 }
 
 func (l *hugeLogger) alignOutput(empty bool) {
-	l.outM.Lock()
-	defer l.outM.Unlock()
+	l.alignM.Lock()
+	defer l.alignM.Unlock()
 
 	if l.NLogs() == 0 {
 		return

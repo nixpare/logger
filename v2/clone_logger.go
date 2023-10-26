@@ -23,8 +23,8 @@ type cloneLogger struct {
 	counter        int
 	heavyLoad      bool
 	lastWrote      int
-	rwm            *sync.RWMutex // rwm handles access to v and lastWrote
-	outM           *sync.Mutex   // outM handles access to out
+	rwm            *sync.RWMutex
+	alignM         *sync.Mutex
 	stopBc         *comms.Broadcaster[struct{}]
 }
 
@@ -38,7 +38,7 @@ func newCloneLogger(parent Logger, out io.Writer, parentOut bool, tags []string,
 		parentOut:      parentOut,
 		lastWrote:      -1,
 		rwm:            new(sync.RWMutex),
-		outM:           new(sync.Mutex),
+		alignM:         new(sync.Mutex),
 		stopBc:         comms.NewBroadcaster[struct{}](),
 	}
 
@@ -47,8 +47,9 @@ func newCloneLogger(parent Logger, out io.Writer, parentOut bool, tags []string,
 
 func (l *cloneLogger) newLog(log Log, writeOutput bool) int {
 	l.counter++
-
 	log.addTags(l.tags...)
+
+	l.rwm.Lock()
 
 	var p int
 	if !l.parentOut {
@@ -57,22 +58,22 @@ func (l *cloneLogger) newLog(log Log, writeOutput bool) int {
 		p = l.parent.newLog(log, writeOutput)
 	}
 
-	l.rwm.Lock()
-	defer l.rwm.Unlock()
-
 	l.v = append(l.v, p)
 	p = len(l.v) - 1
 
 	if l.out == nil || !writeOutput {
 		l.lastWrote = p
+		l.rwm.Unlock()
+		return p
+	}
+
+	if !l.heavyLoad && l.lastWrote == p-1 {
+		l.lastWrote = p
+		l.rwm.Unlock()
+
+		logToOut(l, log, l.extrasDisabled)
 	} else {
-		if !l.heavyLoad && l.lastWrote == p-1 {
-			l.lastWrote = p
-			
-			l.outM.Lock()
-			logToOut(l, log, l.extrasDisabled)
-			l.outM.Unlock()
-		}
+		l.rwm.Unlock()
 	}
 
 	return p
@@ -181,20 +182,29 @@ func (l *cloneLogger) checkHeavyLoad() {
 		stopC <- struct{}{}
 	}()
 
+	var doingPartialAlign bool
+
 	for !exitLoop {
 		select {
 		case <-ticker.C:
 			if l.counter > MaxLogsPerScan {
-				l.counter = 0
 				l.heavyLoad = true
 			} else {
-				l.counter = 0
 				l.heavyLoad = false
-				go l.alignOutput(false)
+
+				if !doingPartialAlign {
+					doingPartialAlign = true
+					go func() {
+						l.alignOutput(false)
+						doingPartialAlign = false
+					}()
+				}
 			}
+
+			l.counter = 0
 		case <-stopC:
-			exitLoop = true
 			ticker.Stop()
+			exitLoop = true
 
 			l.alignOutput(true)
 		}
@@ -214,15 +224,15 @@ func (l *cloneLogger) Close() {
 }
 
 func (l *cloneLogger) alignOutput(empty bool) {
-	l.outM.Lock()
-	defer l.outM.Unlock()
-
-	if l.NLogs() == 0 {
-		return
-	}
+	l.alignM.Lock()
+	defer l.alignM.Unlock()
 
 	for {
 		if !empty && l.heavyLoad {
+			break
+		}
+
+		if l.lastWrote == -1 {
 			break
 		}
 

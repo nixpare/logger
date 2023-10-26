@@ -116,7 +116,7 @@ func NewLogger(out io.Writer, tags ...string) Logger {
 		tags:      tags,
 		lastWrote: -1,
 		rwm:       new(sync.RWMutex),
-		outM:      new(sync.Mutex),
+		alignM:    new(sync.Mutex),
 		stopBc:    comms.NewBroadcaster[struct{}](),
 	}
 }
@@ -137,7 +137,7 @@ func NewHugeLogger(out io.Writer, dir string, prefix string, tags ...string) (Lo
 		tags:      tags,
 		lastWrote: -1,
 		rwm:       new(sync.RWMutex),
-		outM:      new(sync.Mutex),
+		alignM:    new(sync.Mutex),
 		stopBc:    comms.NewBroadcaster[struct{}](),
 	}
 
@@ -166,15 +166,15 @@ func logToOut(l Logger, log Log, disableExtras bool) {
 }
 
 func asStdout(l Logger) io.Writer {
-	return &outLogger{ l: l }
+	return &outLogger{l: l}
 }
 
 func asStderr(l Logger) io.Writer {
-	return &errLogger{ l: l }
+	return &errLogger{l: l}
 }
 
 func fixedLogger(l Logger, level LogLevel) io.Writer {
-	return &fixLogger{ l:l, level: level }
+	return &fixLogger{l: l, level: level}
 }
 
 func write(l Logger, p []byte) (n int, err error) {
