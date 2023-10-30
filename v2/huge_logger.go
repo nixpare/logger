@@ -3,11 +3,14 @@ package logger
 import (
 	"fmt"
 	"io"
+	"runtime"
 	"sync"
 	"time"
 
 	"github.com/nixpare/comms"
 )
+
+var MaxMemUsage uint64 = 2 * 1000 * 1000 * 1000
 
 type hugeLogger struct {
 	out            io.Writer
@@ -132,6 +135,12 @@ func (l *hugeLogger) Clone(out io.Writer, parentOut bool, tags ...string) Logger
 	return newCloneLogger(l, out, parentOut, tags, l.extrasDisabled)
 }
 
+func memUsageExceeded() bool {
+	var mem runtime.MemStats
+	runtime.ReadMemStats(&mem)
+	return mem.Alloc > MaxMemUsage
+}
+
 func (l *hugeLogger) checkHeavyLoad() {
 	ticker := time.NewTicker(ScanInterval)
 	var exitLoop bool
@@ -145,11 +154,21 @@ func (l *hugeLogger) checkHeavyLoad() {
 		stopC <- struct{}{}
 	}()
 
-	var doingPartialAlign bool
+	var alignInProgress, memRecoveryInProgress bool
 
 	for !exitLoop {
 		select {
 		case <-ticker.C:
+			if memUsageExceeded() && len(l.hls.buffer) != 0 {
+				if !memRecoveryInProgress {
+					memRecoveryInProgress = true
+					go func() {
+						l.hls.alignStorage(true)
+						memRecoveryInProgress = false
+					}()
+				}
+			}
+
 			if l.counter > MaxLogsPerScan {
 				l.heavyLoad = true
 				l.hls.heavyLoad = true
@@ -157,12 +176,12 @@ func (l *hugeLogger) checkHeavyLoad() {
 				l.heavyLoad = false
 				l.hls.heavyLoad = false
 
-				if !doingPartialAlign {
-					doingPartialAlign = true
+				if !alignInProgress {
+					alignInProgress = true
 					go func() {
 						l.alignOutput(false)
 						l.hls.alignStorage(false)
-						doingPartialAlign = false
+						alignInProgress = false
 					}()
 				}
 			}
