@@ -150,21 +150,27 @@ func (l *memLogger) checkHeavyLoad() {
 	}()
 
 	var doingPartialAlign bool
+	var releaseCounter int
 
 	for !exitLoop {
 		select {
 		case <-ticker.C:
 			if l.counter > MaxLogsPerScan {
+				releaseCounter = 0
 				l.heavyLoad = true
 			} else {
-				l.heavyLoad = false
+				releaseCounter ++
 
-				if !doingPartialAlign {
-					doingPartialAlign = true
-					go func() {
-						l.alignOutput(false)
-						doingPartialAlign = false
-					}()
+				if releaseCounter > NegativeScansBeforeAlign {
+					l.heavyLoad = false
+
+					if !doingPartialAlign {
+						doingPartialAlign = true
+						go func() {
+							l.alignOutput(false)
+							doingPartialAlign = false
+						}()
+					}
 				}
 			}
 

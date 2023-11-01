@@ -103,8 +103,9 @@ var (
 	// log files
 	LogFileExtension = "data"
 
-	MaxLogsPerScan = 1000
+	MaxLogsPerScan = 200
 	ScanInterval   = 200 * time.Millisecond
+	NegativeScansBeforeAlign = 5
 )
 
 // NewLogger creates a standard logger, which saves the logs only in

@@ -155,6 +155,7 @@ func (l *hugeLogger) checkHeavyLoad() {
 	}()
 
 	var alignInProgress, memRecoveryInProgress bool
+	var releaseCounter int
 
 	for !exitLoop {
 		select {
@@ -170,19 +171,24 @@ func (l *hugeLogger) checkHeavyLoad() {
 			}
 
 			if l.counter > MaxLogsPerScan {
+				releaseCounter = 0
 				l.heavyLoad = true
 				l.hls.heavyLoad = true
 			} else {
-				l.heavyLoad = false
-				l.hls.heavyLoad = false
+				releaseCounter ++
 
-				if !alignInProgress {
-					alignInProgress = true
-					go func() {
-						l.alignOutput(false)
-						l.hls.alignStorage(false)
-						alignInProgress = false
-					}()
+				if releaseCounter > NegativeScansBeforeAlign {
+					l.heavyLoad = false
+					l.hls.heavyLoad = false
+	
+					if !alignInProgress {
+						alignInProgress = true
+						go func() {
+							l.alignOutput(false)
+							l.hls.alignStorage(false)
+							alignInProgress = false
+						}()
+					}
 				}
 			}
 
