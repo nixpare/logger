@@ -12,17 +12,17 @@ import (
 )
 
 type hugeLogStorage struct {
-	n         int      // n is the number of logs stored
-	chunks    int      // chunks is the number of files created to store the logs
-	cache     []Log    // cache holds the most recent logs, it is a circular list
-	cacheHead int      // cacheHead points to the start of the cache
-	dir       string   // dir is the directory where the files are saved
-	prefix    string   // prefix holds the identifier of the log files and the timestamp
-	f         *os.File // f is the last log file opened for writing
-	lastStored  int
-	heavyLoad   bool
-	buffer      map[int]*[]Log
-	rwm         *sync.RWMutex
+	n          int      // n is the number of logs stored
+	chunks     int      // chunks is the number of files created to store the logs
+	cache      []Log    // cache holds the most recent logs, it is a circular list
+	cacheHead  int      // cacheHead points to the start of the cache
+	dir        string   // dir is the directory where the files are saved
+	prefix     string   // prefix holds the identifier of the log files and the timestamp
+	f          *os.File // f is the last log file opened for writing
+	lastStored int
+	heavyLoad  bool
+	buffer     map[int]*[]Log
+	rwm        *sync.RWMutex
 }
 
 func initHugeLogStorage(dir, prefix string) (*hugeLogStorage, error) {
@@ -32,12 +32,12 @@ func initHugeLogStorage(dir, prefix string) (*hugeLogStorage, error) {
 	}
 
 	hls := &hugeLogStorage{
-		cache:  make([]Log, 0),
-		dir:    dir,
-		prefix: fmt.Sprintf("%s-%s-", prefix, time.Now().Format(LogFileTimeFormat)),
+		cache:      make([]Log, 0),
+		dir:        dir,
+		prefix:     fmt.Sprintf("%s-%s-", prefix, time.Now().Format(LogFileTimeFormat)),
 		lastStored: -1,
-		buffer: make(map[int]*[]Log),
-		rwm:    new(sync.RWMutex),
+		buffer:     make(map[int]*[]Log),
+		rwm:        new(sync.RWMutex),
 	}
 
 	info, err := os.Stat(dir)
@@ -83,26 +83,26 @@ func (hls *hugeLogStorage) addLog(l Log) {
 	hls.rwm.Lock()
 	defer hls.rwm.Unlock()
 
-	if !hls.heavyLoad && hls.lastStored + 1 == hls.n {
+	if !hls.heavyLoad && hls.lastStored+1 == hls.n {
 		if _, err := hls.f.Write(l.JSON()); err != nil {
 			Printf(LOG_LEVEL_ERROR, "Error writing log to file: %v\n%v", err, l)
 		}
-		if  _, err := hls.f.Write([]byte{'\n'}); err != nil {
+		if _, err := hls.f.Write([]byte{'\n'}); err != nil {
 			Printf(LOG_LEVEL_ERROR, "Error writing log separator to file: %v", err)
 		}
 
-		hls.lastStored ++
+		hls.lastStored++
 	} else {
 		b, ok := hls.buffer[hls.chunks]
 		if !ok {
-			b = newLogBuffer()
+			b = newChunkSizeBuffer()
 			hls.buffer[hls.chunks] = b
 		}
 
 		*b = append(*b, l)
 	}
 
-	hls.n ++
+	hls.n++
 }
 
 func (hls *hugeLogStorage) getLog(index int) Log {
@@ -123,7 +123,7 @@ func (hls *hugeLogStorage) getLog(index int) Log {
 		defer hls.rwm.RUnlock()
 
 		b := *hls.buffer[fNum]
-		return b[fIndex - (LogChunkSize - len(b))]
+		return b[fIndex-(LogChunkSize-len(b))]
 	}
 	hls.rwm.RUnlock()
 
@@ -315,8 +315,9 @@ func (hls *hugeLogStorage) getSpecificLogs(logs []int) []Log {
 			lastRead := (fNum * LogChunkSize) - 1
 
 			sc := bufio.NewScanner(f)
-			loop: for i = range interv {
-				for j := lastRead+1; j < interv[i]; j++ {
+		loop:
+			for i = range interv {
+				for j := lastRead + 1; j < interv[i]; j++ {
 					ok := sc.Scan()
 					if !ok {
 						break loop
@@ -370,7 +371,7 @@ func (hls *hugeLogStorage) alignStorage(empty bool) {
 		}
 		hls.rwm.Lock()
 
-		chunk := (hls.lastStored+1) / LogChunkSize
+		chunk := (hls.lastStored + 1) / LogChunkSize
 		b, ok := hls.buffer[chunk]
 		if !ok {
 			hls.rwm.Unlock()
@@ -382,7 +383,7 @@ func (hls *hugeLogStorage) alignStorage(empty bool) {
 			break
 		}
 
-		f, err := os.OpenFile(hls.fileNameGeneration(chunk), os.O_WRONLY | os.O_APPEND, 0)
+		f, err := os.OpenFile(hls.fileNameGeneration(chunk), os.O_WRONLY|os.O_APPEND, 0)
 		if err != nil {
 			hls.rwm.Unlock()
 			panic(err)
@@ -392,13 +393,13 @@ func (hls *hugeLogStorage) alignStorage(empty bool) {
 			if _, err = f.Write(log.JSON()); err != nil {
 				Printf(LOG_LEVEL_ERROR, "Error writing log to file: %v\n%v", err, log)
 			}
-			if  _, err = f.Write([]byte{'\n'}); err != nil {
+			if _, err = f.Write([]byte{'\n'}); err != nil {
 				Printf(LOG_LEVEL_ERROR, "Error writing log separator to file: %v", err)
 			}
 		}
 
 		hls.lastStored += len(*b)
-		logPool.Put(b)
+		logPoolChunkSize.Put(b)
 		delete(hls.buffer, chunk)
 
 		hls.rwm.Unlock()

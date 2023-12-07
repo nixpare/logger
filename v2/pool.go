@@ -2,7 +2,7 @@ package logger
 
 import "sync"
 
-var logPool = sync.Pool{
+var logPoolChunkSize = sync.Pool{
 	New: func() any {
 		v := new([]Log)
 		*v = make([]Log, 0, LogChunkSize)
@@ -10,8 +10,8 @@ var logPool = sync.Pool{
 	},
 }
 
-func newLogBuffer() *[]Log {
-	v := logPool.Get().(*[]Log)
+func newChunkSizeBuffer() *[]Log {
+	v := logPoolChunkSize.Get().(*[]Log)
 	*v = (*v)[:0]
 	return v
 }

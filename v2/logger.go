@@ -103,8 +103,8 @@ var (
 	// log files
 	LogFileExtension = "data"
 
-	MaxLogsPerScan = 200
-	ScanInterval   = 200 * time.Millisecond
+	MaxLogsPerScan           = 200
+	ScanInterval             = 200 * time.Millisecond
 	NegativeScansBeforeAlign = 5
 )
 
@@ -126,13 +126,13 @@ func NewLogger(out io.Writer, tags ...string) Logger {
 // saves everything in files divided in clusters. The dir parameter tells the
 // logger in which directory to save the logs' files. The prefix, instead, tells
 // the logger how to name the files. Read the Logger interface docs for other informations
-func NewHugeLogger(out io.Writer, dir string, prefix string, tags ...string) (Logger, error) {
+func NewHugeLogger(out io.Writer, dir string, prefix string, tags ...string) (*HugeLogger, error) {
 	hls, err := initHugeLogStorage(dir, prefix)
 	if err != nil {
 		return nil, err
 	}
 
-	l := &hugeLogger{
+	l := &HugeLogger{
 		out:       out,
 		hls:       hls,
 		tags:      tags,

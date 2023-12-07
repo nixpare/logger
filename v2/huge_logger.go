@@ -12,7 +12,7 @@ import (
 
 var MaxMemUsage uint64 = 2 * 1000 * 1000 * 1000
 
-type hugeLogger struct {
+type HugeLogger struct {
 	out            io.Writer
 	hls            *hugeLogStorage
 	tags           []string
@@ -25,7 +25,7 @@ type hugeLogger struct {
 	stopBc         *comms.Broadcaster[struct{}]
 }
 
-func (l *hugeLogger) newLog(log Log, writeOutput bool) int {
+func (l *HugeLogger) newLog(log Log, writeOutput bool) int {
 	l.counter++
 	log.addTags(l.tags...)
 
@@ -52,40 +52,40 @@ func (l *hugeLogger) newLog(log Log, writeOutput bool) int {
 	return p
 }
 
-func (l *hugeLogger) AddLog(level LogLevel, message string, extra string, writeOutput bool) {
+func (l *HugeLogger) AddLog(level LogLevel, message string, extra string, writeOutput bool) {
 	l.newLog(Log{
 		l: newLog(level, message, extra),
 	}, writeOutput)
 }
 
-func (l *hugeLogger) Print(level LogLevel, a ...any) {
+func (l *HugeLogger) Print(level LogLevel, a ...any) {
 	print(l, level, a...)
 }
 
-func (l *hugeLogger) Printf(level LogLevel, format string, a ...any) {
+func (l *HugeLogger) Printf(level LogLevel, format string, a ...any) {
 	l.Print(level, fmt.Sprintf(format, a...))
 }
 
-func (l *hugeLogger) Debug(a ...any) {
+func (l *HugeLogger) Debug(a ...any) {
 	l.Print(LOG_LEVEL_DEBUG, a...)
 }
 
-func (l *hugeLogger) NLogs() int {
+func (l *HugeLogger) NLogs() int {
 	return l.hls.n
 }
 
-func (l *hugeLogger) Out() io.Writer {
+func (l *HugeLogger) Out() io.Writer {
 	return l.out
 }
 
-func (l *hugeLogger) GetLog(index int) Log {
+func (l *HugeLogger) GetLog(index int) Log {
 	l.rwm.RLock()
 	defer l.rwm.RUnlock()
 
 	return l.hls.getLog(index)
 }
 
-func (l *hugeLogger) GetLastNLogs(n int) []Log {
+func (l *HugeLogger) GetLastNLogs(n int) []Log {
 	tot := l.NLogs()
 	if n > tot {
 		n = tot
@@ -93,45 +93,45 @@ func (l *hugeLogger) GetLastNLogs(n int) []Log {
 	return l.GetLogs(tot-n, tot)
 }
 
-func (l *hugeLogger) GetLogs(start, end int) []Log {
+func (l *HugeLogger) GetLogs(start, end int) []Log {
 	l.rwm.RLock()
 	defer l.rwm.RUnlock()
 
 	return l.hls.getLogs(start, end)
 }
 
-func (l *hugeLogger) GetSpecificLogs(logs []int) []Log {
+func (l *HugeLogger) GetSpecificLogs(logs []int) []Log {
 	l.rwm.RLock()
 	defer l.rwm.RUnlock()
 
 	return l.hls.getSpecificLogs(logs)
 }
 
-func (l *hugeLogger) AsStdout() io.Writer {
+func (l *HugeLogger) AsStdout() io.Writer {
 	return asStdout(l)
 }
 
-func (l *hugeLogger) AsStderr() io.Writer {
+func (l *HugeLogger) AsStderr() io.Writer {
 	return asStderr(l)
 }
 
-func (l *hugeLogger) FixedLogger(level LogLevel) io.Writer {
+func (l *HugeLogger) FixedLogger(level LogLevel) io.Writer {
 	return fixedLogger(l, level)
 }
 
-func (l *hugeLogger) Write(p []byte) (n int, err error) {
+func (l *HugeLogger) Write(p []byte) (n int, err error) {
 	return write(l, p)
 }
 
-func (l *hugeLogger) EnableExtras() {
+func (l *HugeLogger) EnableExtras() {
 	l.extrasDisabled = false
 }
 
-func (l *hugeLogger) DisableExtras() {
+func (l *HugeLogger) DisableExtras() {
 	l.extrasDisabled = true
 }
 
-func (l *hugeLogger) Clone(out io.Writer, parentOut bool, tags ...string) Logger {
+func (l *HugeLogger) Clone(out io.Writer, parentOut bool, tags ...string) Logger {
 	return newCloneLogger(l, out, parentOut, tags, l.extrasDisabled)
 }
 
@@ -141,7 +141,7 @@ func memUsageExceeded() bool {
 	return mem.Alloc > MaxMemUsage
 }
 
-func (l *hugeLogger) checkHeavyLoad() {
+func (l *HugeLogger) checkHeavyLoad() {
 	ticker := time.NewTicker(ScanInterval)
 	var exitLoop bool
 
@@ -175,12 +175,12 @@ func (l *hugeLogger) checkHeavyLoad() {
 				l.heavyLoad = true
 				l.hls.heavyLoad = true
 			} else {
-				releaseCounter ++
+				releaseCounter++
 
 				if releaseCounter > NegativeScansBeforeAlign {
 					l.heavyLoad = false
 					l.hls.heavyLoad = false
-	
+
 					if !alignInProgress {
 						alignInProgress = true
 						go func() {
@@ -205,17 +205,17 @@ func (l *hugeLogger) checkHeavyLoad() {
 	stopMsg.Report()
 }
 
-func (l *hugeLogger) EnableHeavyLoadDetection() {
+func (l *HugeLogger) EnableHeavyLoadDetection() {
 	if l.out != nil {
 		go l.checkHeavyLoad()
 	}
 }
 
-func (l *hugeLogger) Close() {
+func (l *HugeLogger) Close() {
 	l.stopBc.SendAndWait(struct{}{})
 }
 
-func (l *hugeLogger) alignOutput(empty bool) {
+func (l *HugeLogger) alignOutput(empty bool) {
 	l.alignM.Lock()
 	defer l.alignM.Unlock()
 
@@ -248,4 +248,33 @@ func (l *hugeLogger) alignOutput(empty bool) {
 		l.lastWrote += len(v)
 		l.rwm.Unlock()
 	}
+}
+
+func (l *HugeLogger) GetLastNLogsBuffered(n int) <-chan []Log {
+	tot := l.NLogs()
+	if n > tot {
+		n = tot
+	}
+	return l.GetLogsBuffered(tot-n, tot)
+}
+
+func (l *HugeLogger) GetLogsBuffered(start, end int) <-chan []Log {
+	l.rwm.RLock()
+	defer l.rwm.RUnlock()
+
+	c := make(chan []Log)
+
+	go func() {
+		defer close(c)
+
+		var i int
+		for i = start; i+1000 < end; i += 1000 {
+			c <- l.hls.getLogs(i, i+1000)
+		}
+		if i < end {
+			c <- l.hls.getLogs(i, end)
+		}
+	}()
+
+	return c
 }
