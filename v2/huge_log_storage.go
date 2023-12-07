@@ -81,16 +81,18 @@ func (hls *hugeLogStorage) addLog(l Log) {
 	}
 
 	hls.rwm.Lock()
-	if !hls.heavyLoad && hls.lastStored + 1 == hls.n {
-		hls.rwm.Unlock()
+	defer hls.rwm.Unlock()
 
-		hls.f.Write(l.JSON())
-		hls.f.Write([]byte{'\n'})
+	if !hls.heavyLoad && hls.lastStored + 1 == hls.n {
+		if _, err := hls.f.Write(l.JSON()); err != nil {
+			Printf(LOG_LEVEL_ERROR, "Error writing log to file: %v\n%v", err, l)
+		}
+		if  _, err := hls.f.Write([]byte{'\n'}); err != nil {
+			Printf(LOG_LEVEL_ERROR, "Error writing log separator to file: %v", err)
+		}
 
 		hls.lastStored ++
 	} else {
-		defer hls.rwm.Unlock()
-		
 		b, ok := hls.buffer[hls.chunks]
 		if !ok {
 			b = newLogBuffer()
@@ -222,7 +224,8 @@ func (hls *hugeLogStorage) getLogs(start, end int) []Log {
 				var l Log
 				err = json.Unmarshal(sc.Bytes(), &l)
 				if err != nil {
-					panic(err)
+					Printf(LOG_LEVEL_ERROR, "Can't decode log #%d: %v\n%s", i, err, string(sc.Bytes()))
+					continue
 				}
 
 				res = append(res, l)
@@ -386,8 +389,12 @@ func (hls *hugeLogStorage) alignStorage(empty bool) {
 		}
 
 		for _, log := range *b {
-			f.Write(log.JSON())
-			f.Write([]byte{'\n'})
+			if _, err = f.Write(log.JSON()); err != nil {
+				Printf(LOG_LEVEL_ERROR, "Error writing log to file: %v\n%v", err, log)
+			}
+			if  _, err = f.Write([]byte{'\n'}); err != nil {
+				Printf(LOG_LEVEL_ERROR, "Error writing log separator to file: %v", err)
+			}
 		}
 
 		hls.lastStored += len(*b)
