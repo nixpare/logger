@@ -138,7 +138,11 @@ func (l *cloneLogger) NLogs() int {
 }
 
 func (l *cloneLogger) Out() io.Writer {
-	return l.out
+	if l.out != nil {
+		return l.out
+	}
+
+	return l.parent.Out()
 }
 
 func (l *cloneLogger) Print(level LogLevel, a ...any) {
