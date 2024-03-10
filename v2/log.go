@@ -122,14 +122,12 @@ func newLog(level LogLevel, message string, extra string) *log {
 
 func (l log) String() string {
 	switch l.level {
-	case LOG_LEVEL_BLANK:
+	case LOG_LEVEL_BLANK, log_level_stdout, log_level_stderr:
 		return fmt.Sprintf(
 			"[%v] - %s",
 			l.date.Format(TimeFormat),
 			l.cleanMessage(),
 		)
-	case log_level_stdout, log_level_stderr:
-		return l.cleanMessage()
 	default:
 		return fmt.Sprintf(
 			"[%v] - %v: %s",
@@ -155,17 +153,16 @@ func (l log) colored() string {
 	}
 
 	switch l.level {
-	case LOG_LEVEL_BLANK:
+	case LOG_LEVEL_BLANK, log_level_stdout:
 		return fmt.Sprintf(
-			"%s[%v]%s - %s",
+			"%s[%v] - %s%s",
 			BRIGHT_BLACK_COLOR, l.date.Format(TimeFormat), DEFAULT_COLOR,
 			l.message,
 		)
-	case log_level_stdout:
-		return l.message
 	case log_level_stderr:
 		return fmt.Sprintf(
-			"%s%s%s",
+			"%s[%v] - %s%s%s",
+			BRIGHT_BLACK_COLOR, l.date.Format(TimeFormat),
 			DARK_RED_COLOR, l.message, DEFAULT_COLOR,
 		)
 	default:

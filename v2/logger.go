@@ -28,7 +28,7 @@ type Logger interface {
 	// AddLog can be used to manually create a Log, writeOutput can be set to false
 	// if you also want the log to not be written to the io.Writer associated with
 	// the Logger
-	AddLog(level LogLevel, message string, extra string, writeOutput bool)
+	AddLog(level LogLevel, message string, extra string, writeOutput bool) int
 	// Clone creates a pseudo-Logger that leans on the calling Logger, called the parent logger.
 	// You can specify additional tags that will be inherited by every log created with
 	// this logger, in addition to every tags owned by the parent logger. If you specify an out
@@ -167,11 +167,11 @@ func logToOut(l Logger, log Log, disableExtras bool) {
 }
 
 func asStdout(l Logger) io.Writer {
-	return &outLogger{l: l}
+	return fixedLogger(l, log_level_stdout)
 }
 
 func asStderr(l Logger) io.Writer {
-	return &errLogger{l: l}
+	return fixedLogger(l, log_level_stderr)
 }
 
 func fixedLogger(l Logger, level LogLevel) io.Writer {

@@ -49,8 +49,8 @@ func (l *memLogger) newLog(log Log, writeOutput bool) int {
 	return p
 }
 
-func (l *memLogger) AddLog(level LogLevel, message string, extra string, writeOutput bool) {
-	l.newLog(Log{
+func (l *memLogger) AddLog(level LogLevel, message string, extra string, writeOutput bool) int {
+	return l.newLog(Log{
 		l: newLog(level, message, extra),
 	}, writeOutput)
 }
