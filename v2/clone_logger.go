@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nixpare/comms"
+	"github.com/nixpare/broadcaster"
 )
 
 // cloneLogger implements the Logger interface and basically
@@ -25,7 +25,7 @@ type cloneLogger struct {
 	lastWrote      int
 	rwm            *sync.RWMutex
 	alignM         *sync.Mutex
-	stopBc         *comms.Broadcaster[struct{}]
+	stopBc         *broadcaster.Broadcaster[struct{}]
 }
 
 func newCloneLogger(parent Logger, out io.Writer, parentOut bool, tags []string, extrasDisabled bool) *cloneLogger {
@@ -39,7 +39,7 @@ func newCloneLogger(parent Logger, out io.Writer, parentOut bool, tags []string,
 		lastWrote:      -1,
 		rwm:            new(sync.RWMutex),
 		alignM:         new(sync.Mutex),
-		stopBc:         comms.NewBroadcaster[struct{}](),
+		stopBc:         broadcaster.NewBroadcaster[struct{}](),
 	}
 
 	return l
@@ -180,9 +180,12 @@ func (l *cloneLogger) checkHeavyLoad() {
 	stopC := make(chan struct{})
 	defer close(stopC)
 
-	var stopMsg comms.BroadcastMessage[struct{}]
+	var stopMsg broadcaster.Payload[struct{}]
+	listener := l.stopBc.Register(1)
+	defer listener.Unregister()
+
 	go func() {
-		stopMsg = l.stopBc.Listen()
+		stopMsg = <-listener.Ch()
 		stopC <- struct{}{}
 	}()
 
@@ -220,7 +223,7 @@ func (l *cloneLogger) checkHeavyLoad() {
 		}
 	}
 
-	stopMsg.Report()
+	stopMsg.Done()
 }
 
 func (l *cloneLogger) EnableHeavyLoadDetection() {
@@ -230,7 +233,7 @@ func (l *cloneLogger) EnableHeavyLoadDetection() {
 }
 
 func (l *cloneLogger) Close() {
-	l.stopBc.SendAndWait(struct{}{})
+	l.stopBc.Send(struct{}{}).Wait()
 }
 
 func (l *cloneLogger) alignOutput(empty bool) {

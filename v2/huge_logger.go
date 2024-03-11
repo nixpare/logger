@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nixpare/comms"
+	"github.com/nixpare/broadcaster"
 )
 
 var MaxMemUsage uint64 = 2 * 1000 * 1000 * 1000
@@ -22,7 +22,7 @@ type HugeLogger struct {
 	lastWrote      int
 	rwm            *sync.RWMutex
 	alignM         *sync.Mutex
-	stopBc         *comms.Broadcaster[struct{}]
+	stopBc         *broadcaster.Broadcaster[struct{}]
 }
 
 func (l *HugeLogger) newLog(log Log, writeOutput bool) int {
@@ -148,9 +148,12 @@ func (l *HugeLogger) checkHeavyLoad() {
 	stopC := make(chan struct{})
 	defer close(stopC)
 
-	var stopMsg comms.BroadcastMessage[struct{}]
+	var stopMsg broadcaster.Payload[struct{}]
+	listener := l.stopBc.Register(1)
+	defer listener.Unregister()
+
 	go func() {
-		stopMsg = l.stopBc.Listen()
+		stopMsg = <-listener.Ch()
 		stopC <- struct{}{}
 	}()
 
@@ -202,7 +205,7 @@ func (l *HugeLogger) checkHeavyLoad() {
 		}
 	}
 
-	stopMsg.Report()
+	stopMsg.Done()
 }
 
 func (l *HugeLogger) EnableHeavyLoadDetection() {
@@ -212,7 +215,7 @@ func (l *HugeLogger) EnableHeavyLoadDetection() {
 }
 
 func (l *HugeLogger) Close() {
-	l.stopBc.SendAndWait(struct{}{})
+	l.stopBc.Send(struct{}{}).Wait()
 }
 
 func (l *HugeLogger) alignOutput(empty bool) {

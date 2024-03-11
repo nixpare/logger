@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nixpare/comms"
+	"github.com/nixpare/broadcaster"
 )
 
 type memLogger struct {
@@ -19,7 +19,7 @@ type memLogger struct {
 	lastWrote      int
 	rwm            *sync.RWMutex
 	alignM         *sync.Mutex
-	stopBc         *comms.Broadcaster[struct{}]
+	stopBc         *broadcaster.Broadcaster[struct{}]
 }
 
 func (l *memLogger) newLog(log Log, writeOutput bool) int {
@@ -143,9 +143,12 @@ func (l *memLogger) checkHeavyLoad() {
 	stopC := make(chan struct{})
 	defer close(stopC)
 
-	var stopMsg comms.BroadcastMessage[struct{}]
+	var stopMsg broadcaster.Payload[struct{}]
+	listener := l.stopBc.Register(1)
+	defer listener.Unregister()
+
 	go func() {
-		stopMsg = l.stopBc.Listen()
+		stopMsg = <-listener.Ch()
 		stopC <- struct{}{}
 	}()
 
@@ -183,7 +186,7 @@ func (l *memLogger) checkHeavyLoad() {
 		}
 	}
 
-	stopMsg.Report()
+	stopMsg.Done()
 }
 
 func (l *memLogger) EnableHeavyLoadDetection() {
@@ -193,7 +196,7 @@ func (l *memLogger) EnableHeavyLoadDetection() {
 }
 
 func (l *memLogger) Close() {
-	l.stopBc.SendAndWait(struct{}{})
+	l.stopBc.Send(struct{}{}).Wait()
 }
 
 func (l *memLogger) alignOutput(empty bool) {

@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nixpare/comms"
+	"github.com/nixpare/broadcaster"
 )
 
 // Logger handles the logging. There are three types of Logger, depending on
@@ -118,7 +118,7 @@ func NewLogger(out io.Writer, tags ...string) Logger {
 		lastWrote: -1,
 		rwm:       new(sync.RWMutex),
 		alignM:    new(sync.Mutex),
-		stopBc:    comms.NewBroadcaster[struct{}](),
+		stopBc:    broadcaster.NewBroadcaster[struct{}](),
 	}
 }
 
@@ -139,7 +139,7 @@ func NewHugeLogger(out io.Writer, dir string, prefix string, tags ...string) (*H
 		lastWrote: -1,
 		rwm:       new(sync.RWMutex),
 		alignM:    new(sync.Mutex),
-		stopBc:    comms.NewBroadcaster[struct{}](),
+		stopBc:    broadcaster.NewBroadcaster[struct{}](),
 	}
 
 	return l, nil
