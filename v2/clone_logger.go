@@ -25,7 +25,7 @@ type cloneLogger struct {
 	lastWrote      int
 	rwm            *sync.RWMutex
 	alignM         *sync.Mutex
-	stopBc         *broadcaster.Broadcaster[struct{}]
+	stopBc         *broadcaster.BroadcastWaiter[struct{}]
 }
 
 func newCloneLogger(parent Logger, out io.Writer, parentOut bool, tags []string, extrasDisabled bool) *cloneLogger {
@@ -39,7 +39,7 @@ func newCloneLogger(parent Logger, out io.Writer, parentOut bool, tags []string,
 		lastWrote:      -1,
 		rwm:            new(sync.RWMutex),
 		alignM:         new(sync.Mutex),
-		stopBc:         broadcaster.NewBroadcaster[struct{}](),
+		stopBc:         broadcaster.NewBroadcastWaiter[struct{}](),
 	}
 
 	return l

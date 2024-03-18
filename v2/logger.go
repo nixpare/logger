@@ -118,7 +118,7 @@ func NewLogger(out io.Writer, tags ...string) Logger {
 		lastWrote: -1,
 		rwm:       new(sync.RWMutex),
 		alignM:    new(sync.Mutex),
-		stopBc:    broadcaster.NewBroadcaster[struct{}](),
+		stopBc:    broadcaster.NewBroadcastWaiter[struct{}](),
 	}
 }
 
@@ -139,7 +139,7 @@ func NewHugeLogger(out io.Writer, dir string, prefix string, tags ...string) (*H
 		lastWrote: -1,
 		rwm:       new(sync.RWMutex),
 		alignM:    new(sync.Mutex),
-		stopBc:    broadcaster.NewBroadcaster[struct{}](),
+		stopBc:    broadcaster.NewBroadcastWaiter[struct{}](),
 	}
 
 	return l, nil

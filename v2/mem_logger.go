@@ -19,7 +19,7 @@ type memLogger struct {
 	lastWrote      int
 	rwm            *sync.RWMutex
 	alignM         *sync.Mutex
-	stopBc         *broadcaster.Broadcaster[struct{}]
+	stopBc         *broadcaster.BroadcastWaiter[struct{}]
 }
 
 func (l *memLogger) newLog(log Log, writeOutput bool) int {
