@@ -95,20 +95,15 @@ type log struct {
 }
 
 func (l log) cleanMessage() string {
-	return strings.TrimSpace(RemoveTerminalColors(l.message))
+	return RemoveTerminalColors(l.message)
 }
 
 func (l log) cleanExtra() string {
-	return strings.TrimSpace(RemoveTerminalColors(l.extra))
+	return RemoveTerminalColors(l.extra)
 }
 
 func newLog(level LogLevel, message string, extra string) *log {
 	t := time.Now()
-
-	if level == log_level_stdout || level == log_level_stderr {
-		message = message + " " + extra
-		extra = ""
-	}
 
 	return &log{
 		id: fmt.Sprintf(
@@ -116,7 +111,7 @@ func newLog(level LogLevel, message string, extra string) *log {
 			t.UnixNano() / 1000, rand.Intn(1000),
 		),
 		level: level, date: t,
-		message: message, extra: extra,
+		message: strings.TrimSpace(message), extra: strings.TrimSpace(extra),
 	}
 }
 
@@ -177,33 +172,38 @@ func (l log) colored() string {
 
 func (l log) full() string {
 	if l.extra == "" {
-		// log_level_stdout and log_level_stderr always in this case
 		return l.String()
 	}
 
-	if l.level == LOG_LEVEL_BLANK {
+	switch l.level {
+	case LOG_LEVEL_BLANK, log_level_stdout, log_level_stderr:
 		return fmt.Sprintf(
 			"[%v] - %s\n%s",
 			l.date.Format(TimeFormat),
 			l.cleanMessage(), IndentString(l.cleanExtra(), 4),
 		)
+	default:
+		return fmt.Sprintf(
+			"[%v] - %v: %s\n%s",
+			l.date.Format(TimeFormat), l.level,
+			l.cleanMessage(), IndentString(l.cleanExtra(), 4),
+		)
 	}
-
-	return fmt.Sprintf(
-		"[%v] - %v: %s\n%s",
-		l.date.Format(TimeFormat), l.level,
-		l.cleanMessage(), IndentString(l.cleanExtra(), 4),
-	)
 }
 
 func (l log) fullColored() string {
 	if l.extra == "" {
-		// log_level_stdout and log_level_stderr always in this case
 		return l.colored()
 	}
 
 	var color string
 	switch l.level {
+	case LOG_LEVEL_BLANK, log_level_stdout, log_level_stderr:
+		return fmt.Sprintf(
+			"%s[%v]%s - %s\n%s",
+			BRIGHT_BLACK_COLOR, l.date.Format(TimeFormat), DEFAULT_COLOR,
+			l.message, IndentString(l.extra, 4),
+		)
 	case LOG_LEVEL_INFO:
 		color = BRIGHT_CYAN_COLOR
 	case LOG_LEVEL_DEBUG:
@@ -214,14 +214,6 @@ func (l log) fullColored() string {
 		color = DARK_RED_COLOR
 	case LOG_LEVEL_FATAL:
 		color = BRIGHT_RED_COLOR
-	}
-
-	if l.level == LOG_LEVEL_BLANK {
-		return fmt.Sprintf(
-			"%s[%v]%s - %s\n%s",
-			BRIGHT_BLACK_COLOR, l.date.Format(TimeFormat), DEFAULT_COLOR,
-			l.message, IndentString(l.extra, 4),
-		)
 	}
 
 	return fmt.Sprintf(
