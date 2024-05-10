@@ -26,6 +26,8 @@ type HugeLogger struct {
 }
 
 func (l *HugeLogger) newLog(log Log, writeOutput bool) int {
+	log.avoidLogging = !writeOutput
+
 	l.counter++
 	log.addTags(l.tags...)
 
@@ -34,21 +36,21 @@ func (l *HugeLogger) newLog(log Log, writeOutput bool) int {
 	l.hls.addLog(log)
 	p := l.hls.n - 1
 
-	if l.out == nil || !writeOutput {
-		l.lastWrote = p
+	if l.out == nil {
+		l.lastWrote ++
 		l.rwm.Unlock()
 		return p
 	}
 
 	if !l.heavyLoad && l.lastWrote == p-1 {
-		l.lastWrote = p
+		l.lastWrote ++
 		l.rwm.Unlock()
 
 		logToOut(l, log, l.extrasDisabled)
 	} else {
 		l.rwm.Unlock()
 	}
-
+	
 	return p
 }
 
@@ -96,6 +98,10 @@ func (l *HugeLogger) GetLastNLogs(n int) []Log {
 func (l *HugeLogger) GetLogs(start, end int) []Log {
 	l.rwm.RLock()
 	defer l.rwm.RUnlock()
+
+	if end > l.hls.n {
+		end = l.hls.n
+	}
 
 	return l.hls.getLogs(start, end)
 }
@@ -160,12 +166,16 @@ func (l *HugeLogger) checkHeavyLoad() {
 	var alignInProgress, memRecoveryInProgress bool
 	var releaseCounter int
 
+	l.heavyLoad = true
+	l.hls.heavyLoad = true
+
 	for !exitLoop {
 		select {
 		case <-ticker.C:
 			if memUsageExceeded() && len(l.hls.buffer) != 0 {
 				if !memRecoveryInProgress {
 					memRecoveryInProgress = true
+
 					go func() {
 						l.hls.alignStorage(true)
 						memRecoveryInProgress = false
@@ -175,23 +185,19 @@ func (l *HugeLogger) checkHeavyLoad() {
 
 			if l.counter > MaxLogsPerScan {
 				releaseCounter = 0
-				l.heavyLoad = true
-				l.hls.heavyLoad = true
 			} else {
 				releaseCounter++
 
-				if releaseCounter > NegativeScansBeforeAlign {
-					l.heavyLoad = false
-					l.hls.heavyLoad = false
+				if releaseCounter > NegativeScansBeforeAlign && !alignInProgress {
+					alignInProgress = true
+					releaseCounter = 0
+					
+					go func() {
+						l.alignOutput(false)
+						l.hls.alignStorage(false)
 
-					if !alignInProgress {
-						alignInProgress = true
-						go func() {
-							l.alignOutput(false)
-							l.hls.alignStorage(false)
-							alignInProgress = false
-						}()
-					}
+						alignInProgress = false
+					}()
 				}
 			}
 
@@ -199,22 +205,25 @@ func (l *HugeLogger) checkHeavyLoad() {
 		case <-stopC:
 			ticker.Stop()
 			exitLoop = true
-
-			l.alignOutput(true)
-			l.hls.alignStorage(true)
 		}
 	}
+
+	l.hls.heavyLoad = false
+	l.heavyLoad = false
+
+	l.alignOutput(true)
+	l.hls.alignStorage(true)
 
 	stopMsg.Done()
 }
 
-func (l *HugeLogger) EnableHeavyLoadDetection() {
+func (l *HugeLogger) EnableHeavyLoad() {
 	if l.out != nil {
 		go l.checkHeavyLoad()
 	}
 }
 
-func (l *HugeLogger) Close() {
+func (l *HugeLogger) DisableHeavyLoad() {
 	l.stopBc.Send(struct{}{}).Wait()
 }
 
@@ -226,30 +235,31 @@ func (l *HugeLogger) alignOutput(empty bool) {
 		return
 	}
 
-	logs := l.GetLastNLogs(l.NLogs() - l.lastWrote - 1)
+	if !empty {
+		logs := l.GetLogs(l.lastWrote, l.lastWrote + AlignChunkSize)
+		l.rwm.Lock()
+		l.lastWrote += len(logs)
+		l.rwm.Unlock()
 
-	for {
-		if !empty && l.heavyLoad {
-			break
+		for _, log := range logs {
+			logToOut(l, log, l.extrasDisabled)
 		}
 
+		return
+	}
+
+	for logs := range l.GetLogsBuffered(l.lastWrote, l.NLogs()) {
 		if len(logs) == 0 {
 			break
 		}
 
-		v := logs
-		if len(v) > MaxLogsPerScan {
-			v = v[:MaxLogsPerScan]
-		}
-		logs = logs[len(v):]
+		l.rwm.Lock()
+		l.lastWrote += len(logs)
+		l.rwm.Unlock()
 
-		for _, log := range v {
+		for _, log := range logs {
 			logToOut(l, log, l.extrasDisabled)
 		}
-
-		l.rwm.Lock()
-		l.lastWrote += len(v)
-		l.rwm.Unlock()
 	}
 }
 
@@ -271,8 +281,8 @@ func (l *HugeLogger) GetLogsBuffered(start, end int) <-chan []Log {
 		defer close(c)
 
 		var i int
-		for i = start; i+1000 < end; i += 1000 {
-			c <- l.hls.getLogs(i, i+1000)
+		for i = start; i+AlignChunkSize < end; i += AlignChunkSize {
+			c <- l.hls.getLogs(i, i+AlignChunkSize)
 		}
 		if i < end {
 			c <- l.hls.getLogs(i, end)

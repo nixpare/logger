@@ -233,6 +233,7 @@ func (l log) fullColored() string {
 type Log struct {
 	l    *log
 	tags []string
+	avoidLogging bool
 }
 
 func (l Log) ID() string {

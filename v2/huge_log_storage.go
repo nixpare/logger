@@ -366,9 +366,6 @@ func (hls *hugeLogStorage) alignStorage(empty bool) {
 	}
 
 	for {
-		if !empty && hls.heavyLoad {
-			break
-		}
 		hls.rwm.Lock()
 
 		chunk := (hls.lastStored + 1) / LogChunkSize
@@ -403,5 +400,9 @@ func (hls *hugeLogStorage) alignStorage(empty bool) {
 		delete(hls.buffer, chunk)
 
 		hls.rwm.Unlock()
+
+		if !empty {
+			break
+		}
 	}
 }

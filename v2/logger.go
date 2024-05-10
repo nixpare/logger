@@ -78,8 +78,8 @@ type Logger interface {
 	AsStderr() io.Writer
 	FixedLogger(level LogLevel) io.Writer
 	Write(p []byte) (n int, err error)
-	EnableHeavyLoadDetection()
-	Close()
+	EnableHeavyLoad()
+	DisableHeavyLoad()
 }
 
 // DefaultLogger is the Logger used by the function in this package
@@ -106,6 +106,7 @@ var (
 	MaxLogsPerScan           = 200
 	ScanInterval             = 200 * time.Millisecond
 	NegativeScansBeforeAlign = 5
+	AlignChunkSize           = 1000
 )
 
 // NewLogger creates a standard logger, which saves the logs only in
@@ -146,6 +147,10 @@ func NewHugeLogger(out io.Writer, dir string, prefix string, tags ...string) (*H
 }
 
 func logToOut(l Logger, log Log, disableExtras bool) {
+	if log.avoidLogging {
+		return
+	}
+
 	out := l.Out()
 	if level := log.Level(); out == os.Stdout && (level == LOG_LEVEL_WARNING || level == LOG_LEVEL_ERROR || level == LOG_LEVEL_FATAL) {
 		out = os.Stderr

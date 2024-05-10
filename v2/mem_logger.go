@@ -32,13 +32,13 @@ func (l *memLogger) newLog(log Log, writeOutput bool) int {
 	p := len(l.v) - 1
 
 	if l.out == nil || !writeOutput {
-		l.lastWrote = p
+		l.lastWrote ++
 		l.rwm.Unlock()
 		return p
 	}
 
 	if !l.heavyLoad && l.lastWrote == p-1 {
-		l.lastWrote = p
+		l.lastWrote ++
 		l.rwm.Unlock()
 
 		logToOut(l, log, l.extrasDisabled)
@@ -152,28 +152,27 @@ func (l *memLogger) checkHeavyLoad() {
 		stopC <- struct{}{}
 	}()
 
-	var doingPartialAlign bool
+	var alignInProgress bool
 	var releaseCounter int
+
+	l.heavyLoad = true
 
 	for !exitLoop {
 		select {
 		case <-ticker.C:
 			if l.counter > MaxLogsPerScan {
 				releaseCounter = 0
-				l.heavyLoad = true
 			} else {
 				releaseCounter ++
 
-				if releaseCounter > NegativeScansBeforeAlign {
-					l.heavyLoad = false
+				if releaseCounter > NegativeScansBeforeAlign && !alignInProgress {
+					alignInProgress = true
+					releaseCounter = 0
 
-					if !doingPartialAlign {
-						doingPartialAlign = true
-						go func() {
-							l.alignOutput(false)
-							doingPartialAlign = false
-						}()
-					}
+					go func() {
+						l.alignOutput(false)
+						alignInProgress = false
+					}()
 				}
 			}
 
@@ -181,21 +180,22 @@ func (l *memLogger) checkHeavyLoad() {
 		case <-stopC:
 			ticker.Stop()
 			exitLoop = true
-
-			l.alignOutput(true)
 		}
 	}
+
+	l.heavyLoad = false
+	l.alignOutput(true)
 
 	stopMsg.Done()
 }
 
-func (l *memLogger) EnableHeavyLoadDetection() {
+func (l *memLogger) EnableHeavyLoad() {
 	if l.out != nil {
 		go l.checkHeavyLoad()
 	}
 }
 
-func (l *memLogger) Close() {
+func (l *memLogger) DisableHeavyLoad() {
 	l.stopBc.Send(struct{}{}).Wait()
 }
 
@@ -203,31 +203,33 @@ func (l *memLogger) alignOutput(empty bool) {
 	l.alignM.Lock()
 	defer l.alignM.Unlock()
 
+	if l.NLogs() == 0 {
+		return
+	}
+
+	logs := l.GetLastNLogs(l.NLogs() - l.lastWrote - 1)
+
 	for {
-		if !empty && l.heavyLoad {
-			break
-		}
-
-		if l.lastWrote == -1 {
-			break
-		}
-
-		logs := l.GetLastNLogs(l.NLogs() - l.lastWrote - 1)
-
 		if len(logs) == 0 {
 			break
 		}
 
-		if len(logs) > MaxLogsPerScan {
-			logs = logs[:MaxLogsPerScan]
+		v := logs
+		if len(v) > AlignChunkSize {
+			v = v[:AlignChunkSize]
 		}
+		logs = logs[len(v):]
 
-		for _, log := range logs {
+		for _, log := range v {
 			logToOut(l, log, l.extrasDisabled)
 		}
 
 		l.rwm.Lock()
-		l.lastWrote += len(logs)
+		l.lastWrote += len(v)
 		l.rwm.Unlock()
+
+		if !empty {
+			break
+		}
 	}
 }
