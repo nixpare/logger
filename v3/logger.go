@@ -21,8 +21,11 @@ var (
 	LogFileTimeFormat = "06.01.02-15.04.05"
 	// LogChunkSize determines both the numbers of logs kept in memory
 	// and the number of logs saved in each file. It must not be changed
-	// after the creation of the first HugeLogger
-	LogChunkSize = 500_000
+	// after the creation of the first HugeLogger.
+	// The default value (100_000) is a good compromise between memory
+	// usage and operations speed, considering that each chunk of logs
+	// takes 5MB of memory with this value
+	LogChunkSize = 100_000
 	// LogFileExtension can be used to change the file extenstion of the
 	// log files
 	LogFileExtension = "data"
