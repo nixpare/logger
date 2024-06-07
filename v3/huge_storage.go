@@ -170,7 +170,7 @@ type interval struct {
 	start, end int
 }
 
-func (hls hugeLogStorage) splitRequestRange(start, end int) (res []interval) {
+func (hls *hugeLogStorage) splitRequestRange(start, end int) (res []interval) {
 	if end-1 >= hls.n-LogChunkSize {
 		if start < hls.n-LogChunkSize {
 			defer func(end int) {
@@ -268,7 +268,7 @@ func (hls *hugeLogStorage) getLogs(start, end int) []Log {
 	return res
 }
 
-func (hls hugeLogStorage) splitRequestSingle(logs []int) (res [][]int) {
+func (hls *hugeLogStorage) splitRequestSingle(logs []int) (res [][]int) {
 	if len(logs) == 0 {
 		return
 	}
