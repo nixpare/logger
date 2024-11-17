@@ -45,6 +45,8 @@ type Logger struct {
 	heavyLoad      bool
 	nextToWrite    int
 
+	logBroadcaster *broadcaster.Broadcaster[Log]
+
 	rwm    *sync.RWMutex
 	alignM *sync.Mutex
 	stopBc *broadcaster.BroadcastWaiter[struct{}]
@@ -57,17 +59,25 @@ type Logger struct {
 // change
 var DefaultLogger *Logger
 
-// NewLogger creates a standard logger, which saves the logs only in
-// memory. Read the Logger interface docs for other informations
-func NewLogger(out io.Writer, tags ...string) *Logger {
+func newLogger(out io.Writer, tags ...string) *Logger {
 	return &Logger{
 		out:         out,
-		storage:     &memLogStorage{},
 		tags:        tags,
+
+		logBroadcaster: broadcaster.NewBroadcaster[Log](),
+
 		rwm:         new(sync.RWMutex),
 		alignM:      new(sync.Mutex),
 		stopBc:      broadcaster.NewBroadcastWaiter[struct{}](),
 	}
+}
+
+// NewLogger creates a standard logger, which saves the logs only in
+// memory. Read the Logger interface docs for other informations
+func NewLogger(out io.Writer, tags ...string) *Logger {
+	l := newLogger(out, tags...)
+	l.storage = &memLogStorage{}
+	return l
 }
 
 // NewLogger creates a logger that keeps in memory the most recent logs and
@@ -80,16 +90,24 @@ func NewHugeLogger(out io.Writer, dir string, prefix string, tags ...string) (*L
 		return nil, err
 	}
 
-	l := &Logger{
-		out:         out,
-		storage:     hls,
-		tags:        tags,
-		rwm:         new(sync.RWMutex),
-		alignM:      new(sync.Mutex),
-		stopBc:      broadcaster.NewBroadcastWaiter[struct{}](),
-	}
+	l := newLogger(out, tags...)
+	l.storage = hls
 
 	return l, nil
+}
+
+func (l *Logger) Clone(out io.Writer, parentOut bool, tags ...string) *Logger {
+	clone := newLogger(out, tags...)
+	clone.storage = &cloneLogStorage{
+		parent: l,
+		parentOut: parentOut,
+	}
+	return clone
+}
+
+func (l *Logger) Close() {
+	l.logBroadcaster.Close()
+	l.stopBc.Close()
 }
 
 func (l *Logger) newLog(log Log, writeOutput bool) int {
@@ -101,6 +119,7 @@ func (l *Logger) newLog(log Log, writeOutput bool) int {
 	l.rwm.Lock()
 
 	l.storage.addLog(log)
+	l.logBroadcaster.Send(log)
 	p := l.storage.logs() - 1
 
 	if l.out == nil {
@@ -247,6 +266,13 @@ func (l *Logger) GetSpecificLogs(logs []int) []Log {
 	return l.storage.getSpecificLogs(logs)
 }
 
+func (l *Logger) ListenForLogs(bufSize int) (int, *broadcaster.Channel[Log]) {
+	l.rwm.RLock()
+	defer l.rwm.RUnlock()
+	
+	return l.Logs(), l.logBroadcaster.Register(bufSize)
+}
+
 func (l *Logger) AsStdout() io.Writer {
 	return l.FixedLogger(log_level_stdout)
 }
@@ -271,20 +297,6 @@ func (l *Logger) EnableExtras() {
 
 func (l *Logger) DisableExtras() {
 	l.extrasDisabled = true
-}
-
-func (l *Logger) Clone(out io.Writer, parentOut bool, tags ...string) *Logger {
-	return &Logger{
-		out:         out,
-		tags:        tags,
-		storage:   &cloneLogStorage{
-			parent: l,
-			parentOut: parentOut,
-		},
-		rwm:       new(sync.RWMutex),
-		alignM:    new(sync.Mutex),
-		stopBc:    broadcaster.NewBroadcastWaiter[struct{}](),
-	}
 }
 
 func memUsageExceeded() bool {
