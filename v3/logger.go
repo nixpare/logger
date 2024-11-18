@@ -45,6 +45,7 @@ type Logger struct {
 	heavyLoad      bool
 	nextToWrite    int
 
+	TrimFunc func(string) string
 	logBroadcaster *broadcaster.Broadcaster[Log]
 
 	rwm    *sync.RWMutex
@@ -64,6 +65,7 @@ func newLogger(out io.Writer, tags ...string) *Logger {
 		out:         out,
 		tags:        tags,
 
+		TrimFunc:strings.TrimSpace,
 		logBroadcaster: broadcaster.NewBroadcaster[Log](),
 
 		rwm:         new(sync.RWMutex),
@@ -140,8 +142,6 @@ func (l *Logger) newLog(log Log, writeOutput bool) int {
 	return p
 }
 
-var TrimFunc = strings.TrimSpace
-
 func (l *Logger) AddLog(level LogLevel, message string, extra string, writeOutput bool) int {
 	t := time.Now()
 
@@ -152,7 +152,7 @@ func (l *Logger) AddLog(level LogLevel, message string, extra string, writeOutpu
 				t.UnixNano() / 1000, rand.Intn(1000),
 			),
 			level: level, date: t,
-			message: TrimFunc(message), extra: TrimFunc(extra),
+			message: l.TrimFunc(message), extra: l.TrimFunc(extra),
 		},
 	}, writeOutput)
 }
